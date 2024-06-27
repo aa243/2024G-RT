@@ -31,3 +31,9 @@ report要求包含：该次report的git commit 编号，相关实现细节与效
 
 一共允许4天late days
 
+# Games101更新
+
+1. 通过命令行参数的方式指定任务
+   1. -i --index 1/2/3 指定任务号
+   2. -n --name 指定task3输出文件名
+   3. -m --method 指定task3的method
