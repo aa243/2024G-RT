@@ -22,7 +22,6 @@ jobs:
           with:
             components: rustfmt, clippy
             toolchain: stable
-        - uses: actions-rs/cargo@v1
         - run: cargo test --all-features
           name: Running Tests 🚀
           working-directory: ./RayTracer
