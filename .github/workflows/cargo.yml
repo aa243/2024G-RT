@@ -21,23 +21,24 @@ jobs:
           name: Setup Cargo Toolchain 🛎️
           with:
             components: rustfmt, clippy
-        - name: step
-          run: cd RayTracer
         - uses: actions-rs/cargo@v1
           name: Running Tests 🚀
           with:
             command: test
             args: --all-features
+            working-directory: ./RayTracer
         - uses: actions-rs/cargo@v1
           name: Check Code Format 🔧
           with:
             command: fmt
             args: -- --check
+            working-directory: ./RayTracer
         - uses: actions-rs/cargo@v1
           name: Lint with Clippy 🔧
           with:
             command: clippy
             args: --all-targets --all-features -- -D warnings
+            working-directory: ./RayTracer
     build:
       name: Build and Upload
       runs-on: ubuntu-latest
@@ -48,20 +49,21 @@ jobs:
           name: Setup Cargo Toolchain 🛎️
         - name: Download Dependencies 🛎️
           run: wget https://github.com/google/fonts/blob/main/ofl/encodesans/EncodeSans%5Bwdth%2Cwght%5D.ttf
-        - name: step
-          run: cd RayTracer
         - uses: actions-rs/cargo@v1
           name: Build 🔧
           with:
             command: build
             args: --release --all-features
+            working-directory: ./RayTracer
         - uses: actions-rs/cargo@v1
           name: Run 🔧
           with:
             command: run
             args: --release
+            working-directory: ./RayTracer
         - uses: actions/upload-artifact@v2
           name: Upload Artifacts 🚀
           with:
             name: output
             path: output/
+            working-directory: ./RayTracer
