@@ -24,6 +24,7 @@ fn main() {
 
     let mut img: RgbImage = ImageBuffer::new(width, height);
 
+    // 以下是write color和process bar的示例代码
     let pixel_color = [255u8; 3];
     for i in 0..100 {
         for j in 0..100 {
