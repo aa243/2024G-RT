@@ -39,13 +39,17 @@ pub fn t2() -> Result<()>{
     let col_id = r.load_colors(&cols);
     let mut k = 0;
     let mut frame_count = 0;
+    let mut time_total = std::time::Duration::new(0, 0);
 
     while k != 27 {
         r.clear(Buffer::Both);
         r.set_model(get_model_matrix(0.0,1.0));
         r.set_view(get_view_matrix(eye_pos));
         r.set_projection(get_projection_matrix(45.0, 1.0, 0.1, 50.0));
+        let mut time_cost = std::time::Instant::now();
         r.draw(pos_id, ind_id, col_id, Primitive::Triangle);
+        println!("draw time cost: {:?}", time_cost.elapsed());
+        time_total += time_cost.elapsed();
 
         let frame_buffer = r.frame_buffer();
         let image = frame_buffer2cv_mat(frame_buffer);
@@ -55,5 +59,6 @@ pub fn t2() -> Result<()>{
         println!("frame count: {}", frame_count);
         frame_count += 1;
     }
+    println!("average time cost: {:?}", time_total/frame_count as u32);
     Ok(())
 }

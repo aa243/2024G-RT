@@ -40,7 +40,11 @@ pub fn t3(filename:String,method:String)-> Result<()>{
     r.set_view(get_view_matrix(eye_pos));
     r.set_projection(get_projection_matrix(45.0, 1.0, 0.1, 50.0));
 
+    println!("Drawing");
+    let time = std::time::Instant::now();
     r.draw(&triangles);
+    println!("Saving");
+    println!("Time: {:?}", time.elapsed());
 
     let image = frame_buffer2cv_mat(r.frame_buffer());
     let v: Vector<i32> = Default::default();
