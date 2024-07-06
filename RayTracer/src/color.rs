@@ -42,6 +42,20 @@ impl Color{
             b: self.b * other.b,
         }
     }
+    pub fn random() -> Self {
+        Self {
+            r: rand::random::<f64>(),
+            g: rand::random::<f64>(),
+            b: rand::random::<f64>(),
+        }
+    }
+    pub fn random_between(min: f64, max: f64) -> Self {
+        Self {
+            r: rand::random::<f64>() * (max - min) + min,
+            g: rand::random::<f64>() * (max - min) + min,
+            b: rand::random::<f64>() * (max - min) + min,
+        }
+    }
 }
 
 impl Mul<f64> for Color {

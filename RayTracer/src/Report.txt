@@ -3,3 +3,7 @@ Report
 将输出格式更换为png。jpg格式会导致图像被压缩，出现画质损失。
 
 为什么要循环来找到长度小于1的向量，而不是直接normalize。
+
+Metal的scatter函数中，无论怎样都返回true，而不是按照教程中所说。
+
+shift+alt+F可以让 rust_analyzer 自动格式化代码。

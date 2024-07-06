@@ -146,9 +146,25 @@ impl Vec3 {
         let s = 1e-8;
         return self.x.abs() < s && self.y.abs() < s && self.z.abs() < s;
     }
-    pub fn reflect(self, n: Vec3) -> Vec3{
-        return self - n * 2.0 * self.dot(&n);
+    pub fn random_in_unit_disk() -> Vec3{
+        loop{
+            let p = Vec3::new(random_between(-1.0, 1.0), random_between(-1.0, 1.0), 0.0);
+            if p.squared_length() < 1.0 {
+                return p;
+            }
+        }
     }
+}
+
+pub fn reflect(v: Vec3, n: Vec3) -> Vec3{
+    // println!("{:?}",v.dot(&n));
+    return v - n * 2.0 * v.dot(&n);
+}
+pub fn refract(uv: Vec3, n: Vec3, etai_over_etat: f64) -> Vec3{
+    let cos_theta = n.dot(&(uv*(-1.0))).min(1.0);
+    let r_out_perp = (uv + n * cos_theta) * etai_over_etat;
+    let r_out_parallel = n * -((1.0 - r_out_perp.squared_length()).abs().sqrt());
+    r_out_parallel + r_out_perp
 }
 
 impl Add for Vec3 {
