@@ -2,13 +2,14 @@
 use std::{f64::INFINITY, fs::File, f64::consts::PI};
 mod util;
 use util::*;
+use std::sync::Arc;
 #[macro_use]
 extern crate lazy_static;
 
 const AUTHOR: &str = "CHENG";
 
 fn main() {
-    let path = "output/final_scene.ppm";
+    let path = "output/Bouncing_spheres.ppm";
     let R = (PI / 4.0).cos();
     let mut world = HittableList::new();
 
@@ -18,10 +19,10 @@ fn main() {
         static ref MATERIAL2: Lambertian = Lambertian::new(Color::new(0.4, 0.2, 0.1));
         static ref MATERIAL3: Metal = Metal::new(Color::new(0.7, 0.6, 0.5), 0.0);
     }
-    world.add(Box::new(Sphere::new(Point3::new(0.0, -1000.0, 0.0), 1000.0, Some(&*GROUND_MATERIAL))));
-    world.add(Box::new(Sphere::new(Point3::new(0.0, 1.0, 0.0), 1.0, Some(&*MATERIAL1))));
-    world.add(Box::new(Sphere::new(Point3::new(-4.0, 1.0, 0.0), 1.0, Some(&*MATERIAL2))));
-    world.add(Box::new(Sphere::new(Point3::new(4.0, 1.0, 0.0), 1.0, Some(&*MATERIAL3))));
+    world.add(Arc::new(Sphere::new_static(Point3::new(0.0, -1000.0, 0.0), 1000.0, Some(&*GROUND_MATERIAL))));
+    world.add(Arc::new(Sphere::new_static(Point3::new(0.0, 1.0, 0.0), 1.0, Some(&*MATERIAL1))));
+    world.add(Arc::new(Sphere::new_static(Point3::new(-4.0, 1.0, 0.0), 1.0, Some(&*MATERIAL2))));
+    world.add(Arc::new(Sphere::new_static(Point3::new(4.0, 1.0, 0.0), 1.0, Some(&*MATERIAL3))));
 
     for a in -11..11{
         for b in -11..11{
@@ -34,7 +35,8 @@ fn main() {
                     let albedo = Color::random().element_mul(Color::random());
                     let sphere_material = Lambertian::new(albedo);
                     let static_material: &'static Lambertian = Box::leak(Box::new(sphere_material));
-                    world.add(Box::new(Sphere::new(center, 0.2, Some(static_material))));
+                    let center2 = center + Vec3::new(0.0, random_between(0.0, 0.5), 0.0);
+                    world.add(Arc::new(Sphere::new(center, 0.2, Some(static_material), center2)));
                 }
                 else if choose_mat < 0.95 {
                     //metal
@@ -42,25 +44,22 @@ fn main() {
                     let fuzz = random_between(0.0, 0.5);
                     let sphere_material = Metal::new(albedo, fuzz);
                     let static_material: &'static Metal = Box::leak(Box::new(sphere_material));
-                    world.add(Box::new(Sphere::new(center, 0.2, Some(static_material))));
+                    world.add(Arc::new(Sphere::new_static(center, 0.2, Some(static_material))));
                 }
                 else {
                     //glass
                     let sphere_material = Dielectric::new(1.5);
                     let static_material: &'static Dielectric = Box::leak(Box::new(sphere_material));
-                    world.add(Box::new(Sphere::new(center, 0.2, Some(static_material))));
+                    world.add(Arc::new(Sphere::new_static(center, 0.2, Some(static_material))));
                 }
             }
         }
     }
-    
-    let material = Lambertian::new(Color::new(0.4, 0.2, 0.1));
-    let static_material: &'static Lambertian = Box::leak(Box::new(material));
 
     // Camera
     let aspect_ratio = 16.0 / 9.0;
-    let image_width = 1200;
-    let samples_per_pixel = 500;
+    let image_width = 400;
+    let samples_per_pixel = 100;
     let max_depth = 50;
     let vfov = 20.0;
     let lookfrom = Point3::new(13.0, 2.0, 3.0);
@@ -70,7 +69,9 @@ fn main() {
     let focus_dist = 10.0;
     let mut cam = Camera::new(aspect_ratio, image_width, samples_per_pixel, max_depth, vfov, lookfrom, lookat, vup, defocus_angle, focus_dist);
 
-    let boxed_world = Box::new(world) as Box<dyn Hittable>;
+    let mut bvh_world: HittableList = HittableList::new();
+    bvh_world.add(Arc::new(BvhNode::new_by_object_list(&world)));
+    let boxed_world = Arc::new(bvh_world) as Arc<dyn Hittable>;
 
     cam.render(&boxed_world, path);
 

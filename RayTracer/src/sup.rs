@@ -21,6 +21,15 @@ impl Point3{
     pub fn zero() -> Self {
         Self::new(0.0, 0.0, 0.0)
     }
+
+    pub fn iloc(&self, i: usize) -> f64 {
+        match i {
+            0 => self.x,
+            1 => self.y,
+            2 => self.z,
+            _ => panic!("Index out of range"),
+        }
+    }
 }
 
 impl Add<Vec3> for Point3 {
@@ -76,6 +85,15 @@ impl Vec3 {
 
     pub fn zero() -> Self {
         Self::new(0.0, 0.0, 0.0)
+    }
+
+    pub fn iloc(&self, i: usize) -> f64 {
+        match i {
+            0 => self.x,
+            1 => self.y,
+            2 => self.z,
+            _ => panic!("Index out of range"),
+        }
     }
 
     pub fn length(&self) -> f64 {
@@ -273,11 +291,12 @@ impl fmt::Display for Point3 {
 pub struct Ray {
     orig: Point3,
     dir: Vec3,
+    tm: f64,
 }
 
 impl Ray {
-    pub fn new(orig: Point3, dir: Vec3) -> Self {
-        Self { orig, dir }
+    pub fn new(orig: Point3, dir: Vec3, tm: f64) -> Self {
+        Self { orig, dir, tm }
     }
 
     pub fn at(&self, t: f64) -> Point3 {
@@ -285,13 +304,16 @@ impl Ray {
         self.orig.clone() + self.dir.clone() * t
     }
 
-    // Be careful! This function returns a reference to the original Point3 and Vec3.
     pub fn origin(&self) -> Point3 {
         self.orig
     }
 
     pub fn direction(&self) -> Vec3 {
         self.dir
+    }
+
+    pub fn time(&self) -> f64 {
+        self.tm
     }
 }
 
@@ -302,8 +324,14 @@ pub struct Interval{
 }
 
 impl Interval{
+    pub fn default() -> Self {
+        Self::empty()
+    }
     pub fn new(min: f64, max: f64) -> Self {
         Self { min, max }
+    }
+    pub fn new_by_interval(a: Interval, b: Interval) -> Self{
+        Self{min: a.min.min(b.min), max: a.max.max(b.max)}
     }
     pub fn universe() -> Self {
         Self { min: std::f64::NEG_INFINITY, max: std::f64::INFINITY }
@@ -324,6 +352,10 @@ impl Interval{
         if x < self.min {self.min}
         else if x > self.max {self.max}
         else {x}
+    }
+    pub fn expand(&self, delta: f64) -> Self{
+        let padding = delta / 2.0;
+        Self { min: self.min - padding, max: self.max + padding }
     }
 }
 

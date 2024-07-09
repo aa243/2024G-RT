@@ -1,15 +1,18 @@
-#[path ="./color.rs"] 
+#[path = "./color.rs"]
 mod color;
 pub use color::*;
-#[path ="./sup.rs"]
+#[path = "./sup.rs"]
 mod sup;
-pub use sup::*;
+use crate::File;
 use image::{ImageBuffer, RgbImage}; //接收render传回来的图片，在main中文件输出
 use indicatif::ProgressBar;
 use rand::random;
-use crate::File;
+use rayon::prelude::*;
+use std::arch::x86_64::_SIDD_LEAST_SIGNIFICANT;
 use std::io::Write;
 use std::process::exit;
+use std::sync::Arc;
+pub use sup::*;
 
 // Note that currently it cannot distinguish whether object is in front of the camera or behind the camera.
 // pub fn hit_sphere(center: Point3, radius: f64, r: Ray) -> f64{
@@ -18,7 +21,7 @@ use std::process::exit;
 //     let h = oc.dot(&r.direction());
 //     let c = oc.squared_length() - radius*radius;
 //     let discriminant = h*h - a*c;
-    
+
 //     if discriminant < 0.0 {
 //         return -1.0;
 //     } else {
@@ -45,72 +48,125 @@ static PI: f64 = std::f64::consts::PI;
 //     return color1 * (1.0-a) + color2 * a;
 // }
 
-pub trait Hittable<'a>{
-    fn hit(&self, r: Ray, ray_t: Interval, rec: &mut HitRecord<'a>) -> bool;
+pub trait Hittable<'a>: Send + Sync {
+    fn hit(&self, r: Ray, ray_t: Interval, rec: &mut HitRecord) -> bool;
     fn display(&self);
     fn get_material(&self) -> Option<&'a dyn Material>;
+    fn bounding_box(&self) -> AABB;
 }
 
 #[derive(Clone, Copy)]
-pub struct HitRecord<'a>{
+pub struct HitRecord {
     pub p: Point3,
     pub normal: Vec3,
     pub t: f64,
     pub front_face: bool,
-    pub mat: Option<&'a dyn Material>, // Use the lifetime 'a here
+    pub mat: Option<&'static dyn Material>, // Change the lifetime to 'static
 }
-impl<'a> HitRecord<'a>{
-    pub fn new(p: Point3, normal: Vec3, t: f64, front_face: bool, mat: Option<&'a dyn Material>) -> Self {
-        Self { p, normal, t, front_face, mat }
+impl<'a> HitRecord {
+    pub fn new(
+        p: Point3,
+        normal: Vec3,
+        t: f64,
+        front_face: bool,
+        mat: Option<&'static dyn Material>,
+    ) -> Self {
+        Self {
+            p,
+            normal,
+            t,
+            front_face,
+            mat,
+        }
     }
     pub fn set_face_normal(&mut self, r: Ray, outward_normal: Vec3) {
         self.front_face = r.direction().dot(&outward_normal) < 0.0;
-        self.normal = if self.front_face {outward_normal} else {outward_normal * (-1.0)};
+        self.normal = if self.front_face {
+            outward_normal
+        } else {
+            outward_normal * (-1.0)
+        };
     }
 }
-
 
 #[derive(Clone, Copy)]
-pub struct Sphere<'a>{
+pub struct Sphere {
     center: Point3,
     radius: f64,
-    mat: Option<&'a dyn Material>,
+    mat: Option<&'static dyn Material>,
+    is_moving: bool,
+    center_vec: Vec3,
+    bbox: AABB,
 }
 
-impl<'a> Sphere<'a>{
-    pub fn new(center: Point3, radius: f64, mat: Option<&'a dyn Material>) -> Self {
-        Self { center, radius, mat}
+impl Sphere {
+    pub fn new(
+        center: Point3,
+        radius: f64,
+        mat: Option<&'static dyn Material>,
+        center2: Point3,
+    ) -> Self {
+        let rvec = Vec3::new(radius, radius, radius);
+        let box1 = AABB::new_by_point(center - rvec, center + rvec);
+        let box2 = AABB::new_by_point(center2 - rvec, center2 + rvec);
+        Self {
+            center,
+            radius,
+            mat,
+            is_moving: true,
+            center_vec: center2 - center,
+            bbox: AABB::new_by_aabb(box1, box2),
+        }
+    }
+    pub fn new_static(center: Point3, radius: f64, mat: Option<&'static dyn Material>) -> Self {
+        let rvec = Vec3::new(radius, radius, radius);
+        Self {
+            center,
+            radius,
+            mat,
+            is_moving: false,
+            center_vec: Vec3::zero(),
+            bbox: AABB::new_by_point(center - rvec, center + rvec),
+        }
+    }
+    pub fn sphere_center(&self, time: f64) -> Point3 {
+        return self.center + self.center_vec * time;
     }
 }
 
-impl<'a> Hittable<'a> for Sphere<'a>{
-    fn hit(&self,ray: Ray, ray_t: Interval, rec: &mut HitRecord<'a>) -> bool {
-        let oc = ray.origin() - self.center;
+impl<'a> Hittable<'a> for Sphere {
+    fn hit(&self, ray: Ray, ray_t: Interval, rec: &mut HitRecord) -> bool {
+        let center = if self.is_moving {
+            self.sphere_center(ray.time())
+        } else {
+            self.center
+        };
+        let oc = center - ray.origin();
         let a = ray.direction().squared_length();
         let half_b = oc.dot(&ray.direction());
-        let c = oc.squared_length() - self.radius*self.radius;
-    
-        let discriminant = half_b*half_b - a*c;
+        let c = oc.squared_length() - self.radius * self.radius;
+
+        let discriminant = half_b * half_b - a * c;
         if discriminant < 0.0 {
             return false;
         }
         let sqrtd = discriminant.sqrt();
-    
+
         // Find the nearest root that lies in the acceptable range.
-        let mut root = (-half_b - sqrtd) / a;
+        let mut root = (half_b - sqrtd) / a;
         if !ray_t.surround(root) {
-            root = (-half_b + sqrtd) / a;
+            root = (half_b + sqrtd) / a;
             if !ray_t.surround(root) {
                 return false;
             }
         }
-    
+
         rec.t = root;
         rec.p = ray.at(rec.t);
-        let outward_normal = (rec.p - self.center) / self.radius;
+        let outward_normal = (rec.p - center) / self.radius;
         rec.set_face_normal(ray, outward_normal);
         rec.mat = self.get_material();
-    
+
         return true;
     }
     fn display(&self) {
@@ -120,17 +176,26 @@ impl<'a> Hittable<'a> for Sphere<'a>{
     fn get_material(&self) -> Option<&'a dyn Material> {
         self.mat
     }
-}
 
-pub struct HittableList<'a>{
-    pub objects: Vec<Box<dyn Hittable<'a>>>,
-}
-
-impl<'a> HittableList<'a>{
-    pub fn new() -> Self {
-        Self { objects: Vec::new() }
+    fn bounding_box(&self) -> AABB {
+        return self.bbox;
     }
-    pub fn add(&mut self, object: Box<dyn Hittable<'a>>) {
+}
+
+pub struct HittableList {
+    pub objects: Vec<Arc<dyn Hittable<'static>>>,
+    bbox: AABB,
+}
+
+impl HittableList {
+    pub fn new() -> Self {
+        Self {
+            objects: Vec::new(),
+            bbox: AABB::default(),
+        }
+    }
+    pub fn add(&mut self, object: Arc<dyn Hittable<'static>>) {
+        self.bbox = AABB::new_by_aabb(self.bbox, object.bounding_box());
         self.objects.push(object);
     }
     pub fn clear(&mut self) {
@@ -138,14 +203,14 @@ impl<'a> HittableList<'a>{
     }
 }
 
-impl<'a> Hittable<'a> for HittableList<'a>{
-    fn hit(&self, r: Ray, ray_t: Interval, rec: &mut HitRecord<'a>) -> bool {
+impl<'a> Hittable<'static> for HittableList {
+    fn hit(&self, r: Ray, ray_t: Interval, rec: &mut HitRecord) -> bool {
         let mut temp_rec = HitRecord::new(Point3::zero(), Vec3::zero(), 0.0, false, None);
         let mut hit_anything = false;
         let mut closest_so_far = ray_t.max;
 
         for object in self.objects.iter() {
-            if object.hit(r, Interval::new(ray_t.min,closest_so_far), &mut temp_rec) {
+            if object.hit(r, Interval::new(ray_t.min, closest_so_far), &mut temp_rec) {
                 hit_anything = true;
                 closest_so_far = temp_rec.t;
                 *rec = temp_rec;
@@ -160,52 +225,317 @@ impl<'a> Hittable<'a> for HittableList<'a>{
         }
     }
 
+    fn get_material(&self) -> Option<&'static dyn Material> {
+        None
+    }
+    fn bounding_box(&self) -> AABB {
+        self.bbox
+    }
+}
+
+pub struct BvhNode {
+    left: Arc<dyn Hittable<'static>>,
+    right: Arc<dyn Hittable<'static>>,
+    bbox: AABB,
+}
+
+impl BvhNode {
+    pub fn new(objects: &mut Vec<Arc<dyn Hittable<'static>>>, start: usize, end: usize) -> Self {
+        let mut bbox = AABB::default();
+        for object_index in start..end {
+            bbox = AABB::new_by_aabb(bbox, objects[object_index].bounding_box());
+        }
+
+        let axis = bbox.longest_axis();
+        let comparator = match axis {
+            0 => BvhNode::box_x_compare,
+            1 => BvhNode::box_y_compare,
+            2 => BvhNode::box_z_compare,
+            _ => panic!("Invalid axis"),
+        };
+        let object_span = end - start;
+        // println!("start: {}, end: {}", start, end);
+        // println!("object_span: {:?}", object_span);
+        let mut left: Arc<dyn Hittable<'static>> = objects[start].clone();
+        let mut right: Arc<dyn Hittable<'static>> = objects[start].clone();
+
+        if object_span == 1 {
+            left = objects[start].clone();
+            right = objects[start].clone();
+        } else if object_span == 2 {
+            left = objects[start].clone();
+            right = objects[start + 1].clone();
+        } else {
+            let comparator_closure = |a: &Arc<dyn Hittable<'static>>, b: &Arc<dyn Hittable<'static>>| -> std::cmp::Ordering {
+                if comparator(a, b) {
+                    std::cmp::Ordering::Less
+                } else if comparator(b, a) {
+                    std::cmp::Ordering::Greater
+                } else {
+                    std::cmp::Ordering::Equal
+                }
+            };
+            objects[start..end].sort_unstable_by( comparator_closure);
+            let mid = start + object_span / 2;
+            left = Arc::new(Self::new(objects, start, mid));
+            right = Arc::new(Self::new(objects, mid, end));
+        }
+
+        Self { left: left, right: right, bbox: bbox }
+    }
+    pub fn new_by_object_list(list: &HittableList) -> Self {
+        let mut objects = list.objects.clone();
+        let number = objects.len();
+        // println!("number: {:?}", number);
+        Self::new(&mut objects, 0, number)
+    }
+    fn box_compare(a: &Arc<dyn Hittable<'static>>, b: &Arc<dyn Hittable<'static>>, axis_index: usize) -> bool {
+        let box_a_interval = a.bounding_box().axis_interval(axis_index);
+        let box_b_interval = b.bounding_box().axis_interval(axis_index);
+        return box_a_interval.min < box_b_interval.min;
+    }
+    fn box_x_compare(a: &Arc<dyn Hittable<'static>>, b: &Arc<dyn Hittable<'static>>) -> bool {
+        Self::box_compare(a, b, 0)
+    }
+    fn box_y_compare(a: &Arc<dyn Hittable<'static>>, b: &Arc<dyn Hittable<'static>>) -> bool {
+        Self::box_compare(a, b, 1)
+    }
+    fn box_z_compare(a: &Arc<dyn Hittable<'static>>, b: &Arc<dyn Hittable<'static>>) -> bool {
+        Self::box_compare(a, b, 2)
+    }
+}
+
+impl<'a> Hittable<'a> for BvhNode {
+    fn hit(&self, r: Ray, ray_t: Interval, rec: &mut HitRecord) -> bool {
+        if !self.bbox.hit(r, ray_t) {
+            return false;
+        }
+        let hit_left = self.left.hit(r, ray_t, rec);
+        let hit_right = self.right.hit(
+            r,
+            Interval::new(ray_t.min, if hit_left { rec.t } else { ray_t.max }),
+            rec,
+        );
+        return hit_left || hit_right;
+    }
+    fn bounding_box(&self) -> AABB {
+        self.bbox
+    }
+    fn display(&self) {
+        println!("BvhNode");
+    }
     fn get_material(&self) -> Option<&'a dyn Material> {
         None
     }
 }
 
-pub struct Camera{
+// AABB
+#[derive(Clone, Copy)]
+pub struct AABB {
+    pub x: Interval,
+    pub y: Interval,
+    pub z: Interval,
+}
+impl AABB {
+    pub fn default() -> Self {
+        Self {
+            x: Interval::default(),
+            y: Interval::default(),
+            z: Interval::default(),
+        }
+    }
+    pub fn new(x: Interval, y: Interval, z: Interval) -> Self {
+        Self { x, y, z }
+    }
+    pub fn new_by_point(a: Point3, b: Point3) -> Self {
+        Self {
+            x: if a.x <= b.x {
+                Interval::new(a.x, b.x)
+            } else {
+                Interval::new(b.x, a.x)
+            },
+            y: if a.y <= b.y {
+                Interval::new(a.y, b.y)
+            } else {
+                Interval::new(b.y, a.y)
+            },
+            z: if a.z <= b.z {
+                Interval::new(a.z, b.z)
+            } else {
+                Interval::new(b.z, a.z)
+            },
+        }
+    }
+    pub fn new_by_aabb(a: AABB, b: AABB) -> Self {
+        Self {
+            x: Interval::new_by_interval(a.x, b.x),
+            y: Interval::new_by_interval(a.y, b.y),
+            z: Interval::new_by_interval(a.z, b.z),
+        }
+    }
+    pub fn axis_interval(&self, axis: usize) -> Interval {
+        match axis {
+            0 => self.x,
+            1 => self.y,
+            2 => self.z,
+            _ => panic!("Invalid axis"),
+        }
+    }
+    pub fn longest_axis(&self) -> usize {
+        if self.x.size() > self.y.size() {
+            return if self.x.size() > self.z.size() {
+                0
+            } else {
+                2
+            }
+        } else {
+            return if self.y.size() > self.z.size() {
+                1
+            } else {
+                2
+            }
+        
+        }
+    }
+    pub fn hit(&self, r: Ray, ray_t: Interval) -> bool {
+        let mut ray_t = ray_t;
+        let ray_origin = r.origin();
+        let ray_direct = r.direction();
+        for axis in 0..3 {
+            let ax = self.axis_interval(axis);
+            let adinv = 1.0 / ray_direct.iloc(axis);
+
+            let t0 = (ax.min - ray_origin.iloc(axis)) * adinv;
+            let t1 = (ax.max - ray_origin.iloc(axis)) * adinv;
+
+            if t0 < t1 {
+                if t0 > ray_t.min {
+                    ray_t.min = t0;
+                }
+                if t1 < ray_t.max {
+                    ray_t.max = t1;
+                }
+            } else {
+                if t1 > ray_t.min {
+                    ray_t.min = t1;
+                }
+                if t0 < ray_t.max {
+                    ray_t.max = t0;
+                }
+            }
+            if ray_t.max <= ray_t.min {
+                return false;
+            }
+        }
+        true
+    }
+}
+
+pub struct Camera {
     pub aspect_ratio: f64,
     pub image_width: u32,
     pub samples_per_pixel: u32,
     pub max_depth: u32,
+    pub vfov: f64,
+    pub lookfrom: Point3,
+    pub lookat: Point3,
+    pub vup: Vec3,
+    pub defocus_angle: f64,
+    pub focus_dist: f64,
 
     image_height: u32,
     center: Point3,
     pixel00_loc: Point3,
     pixel_horizontal: Vec3,
     pixel_vertical: Vec3,
+    u: Vec3,
+    v: Vec3,
+    w: Vec3,
+    defocus_disk_u: Vec3,
+    defocus_disk_v: Vec3,
 }
 
-impl Camera{
-    pub fn new(aspect_ratio: f64, image_width: u32, samples_per_pixel: u32, max_depth: u32) -> Self {
-        Self { aspect_ratio: aspect_ratio, image_width: image_width, samples_per_pixel: samples_per_pixel, max_depth: max_depth, image_height: 0, center: Point3::zero(), pixel00_loc: Point3::zero(), pixel_horizontal: Vec3::zero(), pixel_vertical: Vec3::zero() }
+impl Camera {
+    pub fn new(
+        aspect_ratio: f64,
+        image_width: u32,
+        samples_per_pixel: u32,
+        max_depth: u32,
+        vfov: f64,
+        lookfrom: Point3,
+        lookat: Point3,
+        vup: Vec3,
+        defocus_angle: f64,
+        focus_dist: f64,
+    ) -> Self {
+        Self {
+            aspect_ratio: aspect_ratio,
+            image_width: image_width,
+            samples_per_pixel: samples_per_pixel,
+            max_depth: max_depth,
+            vfov: vfov,
+            lookfrom: lookfrom,
+            lookat: lookat,
+            vup: vup,
+            defocus_angle: defocus_angle,
+            focus_dist: focus_dist,
+            image_height: 0,
+            center: Point3::zero(),
+            pixel00_loc: Point3::zero(),
+            pixel_horizontal: Vec3::zero(),
+            pixel_vertical: Vec3::zero(),
+            u: Vec3::zero(),
+            v: Vec3::zero(),
+            w: Vec3::zero(),
+            defocus_disk_u: Vec3::zero(),
+            defocus_disk_v: Vec3::zero(),
+        }
     }
 
     fn initialize(&mut self) {
         self.image_height = (self.image_width as f64 / self.aspect_ratio) as u32;
-        self.image_height = if self.image_height > 1 { self.image_height} else {1};
+        self.image_height = if self.image_height > 1 {
+            self.image_height
+        } else {
+            1
+        };
+        self.center = self.lookfrom;
 
-        let viewport_height = 2.0;
+        self.w = (self.lookfrom - self.lookat).normalize();
+        self.u = self.vup.cross(&self.w).normalize();
+        self.v = self.w.cross(&self.u);
+
+        let theta = self.vfov.to_radians();
+        let h = (theta / 2.0).tan();
+        let viewport_height = 2.0 * h * self.focus_dist;
         let viewport_width = (self.image_width as f64 / self.image_height as f64) * viewport_height;
-        let focal_length = 1.0;
 
-        let horizontal = Vec3::new(viewport_width, 0.0, 0.0);
-        let vertical = Vec3::new(0.0, -viewport_height, 0.0);
+        let horizontal = self.u * viewport_width;
+        let vertical = self.v * (-1.0) * viewport_height;
         self.pixel_horizontal = horizontal / self.image_width as f64;
         self.pixel_vertical = vertical / self.image_height as f64;
 
-        self.center = Point3::zero();
-        let viewport_upperleft = self.center - Vec3::new(0.0, 0.0, focal_length) - horizontal/2.0 - vertical/2.0;
-        self.pixel00_loc = viewport_upperleft + self.pixel_horizontal/2.0 + self.pixel_vertical/2.0;
+        let viewport_upperleft =
+            self.center - self.w * self.focus_dist - horizontal / 2.0 - vertical / 2.0;
+        self.pixel00_loc =
+            viewport_upperleft + self.pixel_horizontal / 2.0 + self.pixel_vertical / 2.0;
+
+        let defocus_radius = self.focus_dist * (self.defocus_angle / 2.0).to_radians().tan();
+        self.defocus_disk_u = self.u * defocus_radius;
+        self.defocus_disk_v = self.v * defocus_radius;
     }
-    
-    fn ray_color(r: Ray, world: &Box<dyn Hittable>, depth: u32) -> Color {
-        if depth <= 0{
-            return Color::new(0.0,0.0,0.0);
+
+    fn ray_color(r: Ray, world: &Arc<dyn Hittable>, depth: u32) -> Color {
+        if depth <= 0 {
+            return Color::new(0.0, 0.0, 0.0);
         }
-        let mut rec = HitRecord{p: Point3::zero(), normal: Vec3::zero(), t: 0.0, front_face: true, mat: None};
+        let mut rec = HitRecord {
+            p: Point3::zero(),
+            normal: Vec3::zero(),
+            t: 0.0,
+            front_face: true,
+            mat: None,
+        };
         let hit = world.hit(r, Interval::new(0.001, INFINITY), &mut rec);
         if hit {
             // lambertian
@@ -214,11 +544,15 @@ impl Camera{
             // basic
             // let direct = Vec3::random_on_hemisphere(&rec.normal);
 
-            let mut scattered = Ray::new(Point3::zero(), Vec3::zero());
-            let mut attenuation = Color::new(0.0,0.0,0.0);
+            let mut scattered = Ray::new(Point3::zero(), Vec3::zero(), 0.0);
+            let mut attenuation = Color::new(0.0, 0.0, 0.0);
 
-            if rec.mat.unwrap().scatter(&r, &rec, &mut attenuation, &mut scattered) {
-                return attenuation .element_mul( Self::ray_color(scattered, world, depth - 1));
+            if rec
+                .mat
+                .unwrap()
+                .scatter(&r, &rec, &mut attenuation, &mut scattered)
+            {
+                return attenuation.element_mul(Self::ray_color(scattered, world, depth - 1));
             }
 
             // let color = Vec3::new(1.0,1.0,1.0) + rec.normal;
@@ -226,12 +560,12 @@ impl Camera{
 
             // return Color::new(color.x as u16, color.y as u16, color.z as u16);
         }
-    
+
         let direct = r.direction();
         let a = 0.5 * (direct.y + 1.0);
-        let color1 = Color::new(1.0, 1.0,  1.0);
-        let color2 = Color::new(0.5,0.7,1.0);
-        return color1 * (1.0-a) + color2 * a;
+        let color1 = Color::new(1.0, 1.0, 1.0);
+        let color2 = Color::new(0.5, 0.7, 1.0);
+        return color1 * (1.0 - a) + color2 * a;
     }
 
     fn is_ci() -> bool {
@@ -245,12 +579,25 @@ impl Camera{
     fn get_ray(&self, i: f64, j: f64) -> Ray {
         let offset = Self::sample_square();
         // let offset = Vec3::new(0.0,0.0,0.0);
-        let pixel_center = self.pixel00_loc + (self.pixel_horizontal * (i + offset.x)) + (self.pixel_vertical * (j + offset.y));
-        let direct = (pixel_center - self.center).normalize();
-        Ray::new(self.center, direct)
+        let pixel_center = self.pixel00_loc
+            + (self.pixel_horizontal * (i + offset.x))
+            + (self.pixel_vertical * (j + offset.y));
+        let ray_origin = if self.defocus_angle <= 0.0 {
+            self.center
+        } else {
+            self.defocus_disk_sample()
+        };
+        let ray_direct = (pixel_center - ray_origin).normalize();
+        let ray_time = random_double();
+        Ray::new(ray_origin, ray_direct, ray_time)
     }
 
-    pub fn render (&mut self, world: &Box<dyn Hittable>, path: &str) {
+    fn defocus_disk_sample(&self) -> Point3 {
+        let p = Vec3::random_in_unit_disk();
+        self.center + self.defocus_disk_u * p.x + self.defocus_disk_v * p.y
+    }
+
+    pub fn render(&mut self, world: &Arc<dyn Hittable>, path: &str) {
         self.initialize();
         let bar: ProgressBar = if Self::is_ci() {
             ProgressBar::hidden()
@@ -259,16 +606,25 @@ impl Camera{
         };
 
         let mut file = File::create(path).expect("Failed to create file");
-        writeln!(file, "P3\n{} {}\n255", self.image_width, self.image_height).expect("Failed to write header");
+        writeln!(file, "P3\n{} {}\n255", self.image_width, self.image_height)
+            .expect("Failed to write header");
 
         for j in 0..self.image_height as usize {
             for i in 0..self.image_width as usize {
-                let mut pixel_color = Color::new(0.0, 0.0, 0.0);
-                for _ in 0..self.samples_per_pixel {
-                    let r = self.get_ray(i as f64, j as f64);
-                    pixel_color = pixel_color + Self::ray_color(r,&world,self.max_depth);
-                }
-                pixel_color = pixel_color / self.samples_per_pixel as f64;
+                let pixel_color: Color = (0..self.samples_per_pixel)
+                    .into_par_iter()
+                    .map(|_| {
+                        let r = self.get_ray(i as f64, j as f64);
+                        Self::ray_color(r, &world, self.max_depth)
+                    })
+                    .reduce(|| Color::new(0.0, 0.0, 0.0), |sum, c| sum + c)
+                    / self.samples_per_pixel as f64;
+                // let mut pixel_color = Color::new(0.0, 0.0, 0.0);
+                // for _ in 0..self.samples_per_pixel {
+                //     let r = self.get_ray(i as f64, j as f64);
+                //     pixel_color = pixel_color + Self::ray_color(r, &world, self.max_depth);
+                // }
+                // pixel_color = pixel_color / self.samples_per_pixel as f64;
                 write_color(pixel_color.to_rgb(), &mut file);
                 bar.inc(1);
             }
@@ -285,56 +641,126 @@ pub fn random_between(min: f64, max: f64) -> f64 {
     min + (max - min) * random_double()
 }
 
-pub trait Material{
-    fn scatter(&self, r_in: &Ray, hit_record: &HitRecord, attenuation: &mut Color, scattered: &mut Ray) -> bool;
+pub fn random_int(min: i32, max: i32) -> i32 {
+    return random_between(min as f64, (max + 1) as f64) as i32;
 }
 
-pub struct Lambertian{
+pub trait Material: Send + Sync {
+    fn scatter(
+        &self,
+        r_in: &Ray,
+        hit_record: &HitRecord,
+        attenuation: &mut Color,
+        scattered: &mut Ray,
+    ) -> bool;
+}
+
+pub struct Lambertian {
     albedo: Color,
 }
 
-impl Lambertian{
+impl Lambertian {
     pub fn new(albedo: Color) -> Self {
         Self { albedo }
     }
 }
 
-impl Material for Lambertian{
-    fn scatter (&self, r_in: &Ray, hit_record: &HitRecord, attenuation: &mut Color, scattered: &mut Ray) -> bool {
+impl Material for Lambertian {
+    fn scatter(
+        &self,
+        r_in: &Ray,
+        hit_record: &HitRecord,
+        attenuation: &mut Color,
+        scattered: &mut Ray,
+    ) -> bool {
         let mut scatter_direction = hit_record.normal + Vec3::random_unit_vector();
 
         if scatter_direction.near_zero() {
             scatter_direction = hit_record.normal;
         }
-        
-        *scattered = Ray::new(hit_record.p, scatter_direction);
+
+        *scattered = Ray::new(hit_record.p, scatter_direction, r_in.time());
         *attenuation = self.albedo;
         return true;
     }
 }
 
-pub struct Metal{
+pub struct Metal {
     albedo: Color,
     fuzz: f64,
 }
 
-impl Metal{
+impl Metal {
     pub fn new(albedo: Color, fuzz: f64) -> Self {
-        Self { albedo, fuzz}
+        Self { albedo, fuzz }
     }
 }
 
-impl Material for Metal{
-    fn scatter (&self, r_in: &Ray, hit_record: &HitRecord, attenuation: &mut Color, scattered: &mut Ray) -> bool {
-        let mut reflected = r_in.direction().reflect(hit_record.normal).normalize();
-        reflected = reflected - Vec3::random_unit_vector() * self.fuzz;
-        // println!("{:?}", Vec3::random_unit_vector().length());
-        // let reflected = hit_record.normal + Vec3::random_unit_vector();
+impl Material for Metal {
+    fn scatter(
+        &self,
+        r_in: &Ray,
+        hit_record: &HitRecord,
+        attenuation: &mut Color,
+        scattered: &mut Ray,
+    ) -> bool {
+        let reflected = reflect(r_in.direction(), hit_record.normal).normalize();
+        let scatter_direction = reflected + Vec3::random_unit_vector() * self.fuzz;
 
-        *scattered = Ray::new(hit_record.p, reflected);
+        // if scatter_direction.dot(&hit_record.normal) <= 0.0 {
+        //     return false;
+        // }
+
+        *scattered = Ray::new(hit_record.p, scatter_direction, r_in.time());
         *attenuation = self.albedo;
-        return scattered.direction().dot(&hit_record.normal) > 0.0;
+        // return scattered.direction().dot(&hit_record.normal) > 0.0;
+        true
     }
 }
 
+pub struct Dielectric {
+    refraction_index: f64,
+}
 
+impl Dielectric {
+    pub fn new(refraction_index: f64) -> Self {
+        Self { refraction_index }
+    }
+    fn reflectance(cosine: f64, refraction_index: f64) -> f64 {
+        let r0 = ((1.0 - refraction_index) / (1.0 + refraction_index)).powi(2);
+        return r0 + (1.0 - r0) * (1.0 - cosine).powi(5);
+    }
+}
+
+impl Material for Dielectric {
+    fn scatter(
+        &self,
+        r_in: &Ray,
+        hit_record: &HitRecord,
+        attenuation: &mut Color,
+        scattered: &mut Ray,
+    ) -> bool {
+        *attenuation = Color::new(1.0, 1.0, 1.0);
+        let ri = if hit_record.front_face {
+            (1.0 / self.refraction_index)
+        } else {
+            self.refraction_index
+        };
+
+        let unit_direction = r_in.direction().normalize();
+        let cos_theta = hit_record.normal.dot(&(unit_direction * (-1.0))).min(1.0);
+        let sin_theta = (1.0 - cos_theta * cos_theta).sqrt();
+
+        let cannot_refract = ri * sin_theta > 1.0;
+        let mut direction = Vec3::zero();
+
+        if cannot_refract || Self::reflectance(cos_theta, ri) > random_double() {
+            direction = reflect(unit_direction, hit_record.normal);
+        } else {
+            direction = refract(unit_direction, hit_record.normal, ri);
+        }
+
+        *scattered = Ray::new(hit_record.p, direction, r_in.time());
+        return true;
+    }
+}
