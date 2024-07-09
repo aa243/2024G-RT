@@ -4,16 +4,14 @@ use sup::Interval;
 use crate::File;
 use std::io::Write;
 use crate::Vec3;
+use std::sync::{Arc, Mutex};
 
 use image::RgbImage;
 /// the multi-sample write_color() function
-pub fn write_color(mut pixel_color: [u8; 3], file: &mut File) {
-    let color_interval = Interval::new(0.0, 256.0);
-    pixel_color[0] = color_interval.clamp(pixel_color[0] as f64) as u8;
-    pixel_color[1] = color_interval.clamp(pixel_color[1] as f64) as u8;
-    pixel_color[2] = color_interval.clamp(pixel_color[2] as f64) as u8;
-    writeln!(file, "{} {} {}", pixel_color[0], pixel_color[1], pixel_color[2]).expect("Failed to write pixel data");
-    // Write the translated [0,255] value of each color component.
+pub fn write_color(pixel_color: [u8; 3], img: &Arc<Mutex<RgbImage>>, i: usize, j: usize) {
+    let mut img_lock = img.lock().unwrap(); // Lock the mutex to access the image buffer.
+    let pixel = img_lock.get_pixel_mut(i.try_into().unwrap(), j.try_into().unwrap());
+    *pixel = image::Rgb(pixel_color);
 }
 
 #[derive (Clone, Copy, Debug, PartialEq)]

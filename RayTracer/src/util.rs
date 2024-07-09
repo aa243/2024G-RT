@@ -4,15 +4,15 @@ pub use color::*;
 #[path = "./sup.rs"]
 mod sup;
 use crate::File;
-use image::{ImageBuffer, RgbImage}; //接收render传回来的图片，在main中文件输出
 use indicatif::ProgressBar;
 use rand::random;
 use rayon::prelude::*;
-use std::arch::x86_64::_SIDD_LEAST_SIGNIFICANT;
-use std::io::Write;
-use std::process::exit;
+use std::io::{Write,BufWriter};
 use std::sync::Arc;
 pub use sup::*;
+use crossbeam::thread;
+use std::sync::Mutex;
+use image::{ImageBuffer, RgbImage}; //接收render传回来的图片，在main中文件输出
 
 // Note that currently it cannot distinguish whether object is in front of the camera or behind the camera.
 // pub fn hit_sphere(center: Point3, radius: f64, r: Ray) -> f64{
@@ -431,6 +431,7 @@ impl AABB {
     }
 }
 
+#[derive(Clone, Copy)]
 pub struct Camera {
     pub aspect_ratio: f64,
     pub image_width: u32,
@@ -597,39 +598,95 @@ impl Camera {
         self.center + self.defocus_disk_u * p.x + self.defocus_disk_v * p.y
     }
 
+    // pub fn render(&mut self, world: &Arc<dyn Hittable>, path: &str) {
+    //     self.initialize();
+    //     let bar: ProgressBar = if Self::is_ci() {
+    //         let output_image: image::DynamicImage = image::DynamicImage::ImageRgb8(*img.clone());e_height * self.image_width) as u64)
+    //     };
+
+    //     let mut file = File::create(path).expect("Failed to create file");
+    //     writeln!(file, "P3\n{} {}\n255", self.image_width, self.image_height)
+    //         .expect("Failed to write header");
+
+    //     for j in 0..self.image_height as usize {
+    //         for i in 0..self.image_width as usize {
+    //             // let pixel_color: Color = (0..self.samples_per_pixel)
+    //             //     .into_par_iter()
+    //             //     .map(|_| {
+    //             //         let r = self.get_ray(i as f64, j as f64);
+    //             //         Self::ray_color(r, &world, self.max_depth)
+    //             //     })
+    //             //     .reduce(|| Color::new(0.0, 0.0, 0.0), |sum, c| sum + c)
+    //             //     / self.samples_per_pixel as f64;
+    //             let mut pixel_color = Color::new(0.0, 0.0, 0.0);
+    //             for _ in 0..self.samples_per_pixel {
+    //                 let r = self.get_ray(i as f64, j as f64);
+    //                 pixel_color = pixel_color + Self::ray_color(r, &world, self.max_depth);
+    //             }
+    //             pixel_color = pixel_color / self.samples_per_pixel as f64;
+    //             write_color(pixel_color.to_rgb(), &mut file);
+    //             bar.inc(1);
+    //         }
+    //     }
+    //     bar.finish();
+    // }
+
     pub fn render(&mut self, world: &Arc<dyn Hittable>, path: &str) {
         self.initialize();
-        let bar: ProgressBar = if Self::is_ci() {
-            ProgressBar::hidden()
-        } else {
-            ProgressBar::new((self.image_height * self.image_width) as u64)
-        };
+        let img = Arc::new(Mutex::new(ImageBuffer::new(self.image_width, self.image_height)));
+        // let file = File::create(path).expect("Failed to create file");
+        // let file = BufWriter::new(file);
+        // let file = Arc::new(Mutex::new(file));
 
-        let mut file = File::create(path).expect("Failed to create file");
-        writeln!(file, "P3\n{} {}\n255", self.image_width, self.image_height)
-            .expect("Failed to write header");
+        // writeln!(file.lock().unwrap(), "P3\n{} {}\n255", self.image_width, self.image_height)
+        //     .expect("Failed to write header");
 
-        for j in 0..self.image_height as usize {
-            for i in 0..self.image_width as usize {
-                let pixel_color: Color = (0..self.samples_per_pixel)
-                    .into_par_iter()
-                    .map(|_| {
-                        let r = self.get_ray(i as f64, j as f64);
-                        Self::ray_color(r, &world, self.max_depth)
-                    })
-                    .reduce(|| Color::new(0.0, 0.0, 0.0), |sum, c| sum + c)
-                    / self.samples_per_pixel as f64;
-                // let mut pixel_color = Color::new(0.0, 0.0, 0.0);
-                // for _ in 0..self.samples_per_pixel {
-                //     let r = self.get_ray(i as f64, j as f64);
-                //     pixel_color = pixel_color + Self::ray_color(r, &world, self.max_depth);
-                // }
-                // pixel_color = pixel_color / self.samples_per_pixel as f64;
-                write_color(pixel_color.to_rgb(), &mut file);
-                bar.inc(1);
+        thread::scope(|s| {
+            let num_threads = 10;
+            let rows_per_thread = self.image_height / num_threads as u32;
+
+            for thread_id in 0..num_threads {
+                let world_clone = Arc::clone(&world);
+                // let file_clone = Arc::clone(&file);
+                let mut img_clone = Arc::clone(&img);
+                let camera_clone = self.clone();
+                let start_row = thread_id * rows_per_thread as usize;
+                let end_row = if thread_id == num_threads - 1 {
+                    self.image_height as usize
+                } else {
+                    start_row + rows_per_thread as usize
+                };
+
+                s.spawn(move |_| {
+                    let mut results: Vec<(usize, usize, [u8; 3])> = Vec::new();
+
+                    for j in start_row..end_row {
+                        for i in 0..camera_clone.image_width as usize {
+                            let pixel_color: Color = (0..camera_clone.samples_per_pixel)
+                                .map(|_| {
+                                    let r = camera_clone.get_ray(i as f64, j as f64);
+                                    Self::ray_color(r, &world_clone, camera_clone.max_depth)
+                                })
+                                .fold(Color::new(0.0, 0.0, 0.0), |sum, c| sum + c)
+                                / camera_clone.samples_per_pixel as f64;
+                            results.push((i, j, pixel_color.to_rgb()));
+                        }
+                    }
+
+                    // let mut file = file_clone.lock().unwrap();
+                    for (i, j, color) in results {
+                        write_color(color, &mut img_clone, i, j);
+                    }
+                });
             }
+        }).unwrap();
+        let cloned_inner_value = (*img).lock().unwrap().clone();
+        let output_image: image::DynamicImage = image::DynamicImage::ImageRgb8(cloned_inner_value);
+        let mut output_file: File = File::create(path).unwrap();
+        match output_image.write_to(&mut output_file, image::ImageOutputFormat::Png) {
+            Ok(_) => {}
+            Err(_) => println!("Outputting image fails."),
         }
-        bar.finish();
     }
 }
 

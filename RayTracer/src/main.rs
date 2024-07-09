@@ -9,7 +9,7 @@ extern crate lazy_static;
 const AUTHOR: &str = "CHENG";
 
 fn main() {
-    let path = "output/Bouncing_spheres.ppm";
+    let path = "output/Bouncing_spheres.png";
     let R = (PI / 4.0).cos();
     let mut world = HittableList::new();
 
