@@ -1,6 +1,4 @@
-use crate::util::{HitRecord, Hittable, Interval, Material, Point3, Ray, Vec3, AABB};
-use std::fs::OpenOptions;
-use std::io::Write;
+use crate::util::{HitRecord, Hittable, Interval, Material, Point3, Ray, Vec3, AABB, Arc, HittableList};
 
 trait plane: Send + Sync {
     fn set_bounding_box(&mut self);
@@ -67,20 +65,6 @@ impl Hittable for Quad {
         let planar_hitpt_vector = intersection - self.Q;
         let alpha = self.w.dot(&planar_hitpt_vector.cross(&self.v));
         let beta = self.w.dot(&self.u.cross(&planar_hitpt_vector));
-        // if (intersection - Point3::new(0.0, 0.0, 0.0)).length() < 0.1 {
-        //     let mut file = OpenOptions::new()
-        //         .append(true)
-        //         .create(true)
-        //         .open("log.txt")
-        //         .unwrap();
-        //     // 写入日志
-        //     writeln!(
-        //         file,
-        //         "hit point: {:?} planar_hitpt_vector:{:?} alpha: {:?}",
-        //         intersection, planar_hitpt_vector, alpha
-        //     )
-        //     .unwrap();
-        // }
         if !Quad::is_interior(alpha, beta, rec) {
             return false;
         }
@@ -103,4 +87,24 @@ impl Hittable for Quad {
     fn bounding_box(&self) -> AABB {
         return self.bbox;
     }
+}
+
+pub fn get_box(a: Point3, b: Point3, mat: Option<&'static dyn Material>) -> Arc<HittableList> {
+    let mut sides = HittableList::new();
+
+    let min = Point3::new(a.x.min(b.x), a.y.min(b.y), a.z.min(b.z));
+    let max = Point3::new(a.x.max(b.x), a.y.max(b.y), a.z.max(b.z));
+
+    let dx = Vec3::new(max.x - min.x, 0.0, 0.0);
+    let dy = Vec3::new(0.0, max.y - min.y, 0.0);
+    let dz = Vec3::new(0.0, 0.0, max.z - min.z);
+
+    sides.add(Arc::new(Quad::new(Point3::new(min.x, min.y, max.z), dx, dy, mat)));
+    sides.add(Arc::new(Quad::new(Point3::new(max.x, min.y, max.z), dz * (-1.0), dy, mat)));
+    sides.add(Arc::new(Quad::new(Point3::new(max.x, min.y, min.z), dx * (-1.0), dy, mat)));
+    sides.add(Arc::new(Quad::new(Point3::new(min.x, min.y, min.z), dz, dy, mat)));
+    sides.add(Arc::new(Quad::new(Point3::new(min.x, max.y, max.z), dx, dz * (-1.0), mat)));
+    sides.add(Arc::new(Quad::new(Point3::new(min.x, min.y, min.z), dx, dz, mat)));
+
+    Arc::new(sides)
 }

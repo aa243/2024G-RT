@@ -9,9 +9,12 @@ mod perlin;
 pub use perlin::Perlin;
 #[path = "./quad.rs"]
 mod quad;
-pub use quad::Quad;
+pub use quad::*;
 #[path = "./sup.rs"]
 mod sup;
+#[path = "./material.rs"]
+mod material;
+pub use material::*;
 use crate::File;
 // use indicatif::ProgressBar;
 use crossbeam::thread;
@@ -356,6 +359,44 @@ impl Hittable for BvhNode {
     }
 }
 
+pub struct Translate {
+    object: Arc<dyn Hittable>,
+    offset: Vec3,
+    bbox: AABB,
+}
+
+impl Translate{
+    pub fn new(object: Arc<dyn Hittable>, offset: Vec3) -> Self {
+        let bbox = object.bounding_box();
+        Self {
+            object,
+            offset,
+            bbox: bbox + offset,
+        }
+    }
+}
+
+impl Hittable for Translate {
+    fn hit(&self, r: Ray, ray_t: Interval, rec: &mut HitRecord) -> bool {
+        let offset_r = Ray::new(r.origin() - self.offset, r.direction(), r.time());
+        if !self.object.hit(offset_r, ray_t, rec) {
+            return false;
+        }
+        rec.p = rec.p + self.offset;
+        return true;
+    }
+    fn bounding_box(&self) -> AABB {
+        self.bbox
+    }
+    fn display(&self) {
+        println!("Translate");
+    }
+    fn get_material(&self) -> Option<&'static dyn Material> {
+        None
+    }
+
+}
+
 // AABB
 #[derive(Clone, Copy)]
 pub struct AABB {
@@ -465,6 +506,17 @@ impl AABB {
     }
 }
 
+impl std::ops::Add<Vec3> for AABB {
+    type Output = Self;
+    fn add(self, rhs: Vec3) -> Self {
+        Self {
+            x: self.x + rhs.x,
+            y: self.y + rhs.y,
+            z: self.z + rhs.z,
+        }
+    }
+}
+
 #[derive(Clone, Copy)]
 pub struct Camera {
     pub aspect_ratio: f64,
@@ -477,6 +529,7 @@ pub struct Camera {
     pub vup: Vec3,
     pub defocus_angle: f64,
     pub focus_dist: f64,
+    pub background: Color,
 
     image_height: u32,
     center: Point3,
@@ -502,6 +555,7 @@ impl Camera {
         vup: Vec3,
         defocus_angle: f64,
         focus_dist: f64,
+        background: Color,
     ) -> Self {
         Self {
             aspect_ratio: aspect_ratio,
@@ -514,6 +568,7 @@ impl Camera {
             vup: vup,
             defocus_angle: defocus_angle,
             focus_dist: focus_dist,
+            background,
             image_height: 0,
             center: Point3::zero(),
             pixel00_loc: Point3::zero(),
@@ -560,7 +615,7 @@ impl Camera {
         self.defocus_disk_v = self.v * defocus_radius;
     }
 
-    fn ray_color(r: Ray, world: &Arc<dyn Hittable>, depth: u32) -> Color {
+    fn ray_color(&self, r: Ray, world: &Arc<dyn Hittable>, depth: u32) -> Color {
         if depth <= 0 {
             return Color::new(0.0, 0.0, 0.0);
         }
@@ -574,7 +629,10 @@ impl Camera {
             v: 0.0,
         };
         let hit = world.hit(r, Interval::new(0.001, INFINITY), &mut rec);
-        if hit {
+        if !hit {
+            return self.background;
+        }
+        else {
             // lambertian
             // let direct = rec.normal + Vec3::random_unit_vector();
 
@@ -583,26 +641,25 @@ impl Camera {
 
             let mut scattered = Ray::new(Point3::zero(), Vec3::zero(), 0.0);
             let mut attenuation = Color::new(0.0, 0.0, 0.0);
+            let color_from_emission = rec.mat.unwrap().emitted(rec.u, rec.v, &rec.p);
 
             if rec
                 .mat
                 .unwrap()
                 .scatter(&r, &rec, &mut attenuation, &mut scattered)
             {
-                return attenuation.element_mul(Self::ray_color(scattered, world, depth - 1));
+                let color_from_scatter =  attenuation.element_mul(self.ray_color(scattered, world, depth - 1));
+                return color_from_emission + color_from_scatter;
             }
 
-            // let color = Vec3::new(1.0,1.0,1.0) + rec.normal;
-            // let color = color * 0.5 * 255.0;
-
-            // return Color::new(color.x as u16, color.y as u16, color.z as u16);
+            return color_from_emission;
         }
 
-        let direct = r.direction();
-        let a = 0.5 * (direct.y + 1.0);
-        let color1 = Color::new(1.0, 1.0, 1.0);
-        let color2 = Color::new(0.5, 0.7, 1.0);
-        return color1 * (1.0 - a) + color2 * a;
+        // let direct = r.direction();
+        // let a = 0.5 * (direct.y + 1.0);
+        // let color1 = Color::new(1.0, 1.0, 1.0);
+        // let color2 = Color::new(0.5, 0.7, 1.0);
+        // return color1 * (1.0 - a) + color2 * a;
     }
 
     fn is_ci() -> bool {
@@ -728,7 +785,7 @@ impl Camera {
                             for _ in 0..camera_clone.samples_per_pixel {
                                 let r = camera_clone.get_ray(i as f64, j as f64);
                                 pixel_color = pixel_color
-                                    + Self::ray_color(r, &world, camera_clone.max_depth);
+                                    + camera_clone.ray_color(r, &world, camera_clone.max_depth);
                             }
                             pixel_color = pixel_color / camera_clone.samples_per_pixel as f64;
                             // write_color(pixel_color.to_rgb(), &mut file);
@@ -768,127 +825,3 @@ pub fn random_int(min: i32, max: i32) -> i32 {
     return random_between(min as f64, (max + 1) as f64) as i32;
 }
 
-pub trait Material: Send + Sync {
-    fn scatter(
-        &self,
-        r_in: &Ray,
-        hit_record: &HitRecord,
-        attenuation: &mut Color,
-        scattered: &mut Ray,
-    ) -> bool;
-}
-
-pub struct Lambertian {
-    tex: Arc<dyn Texture>,
-}
-
-impl Lambertian {
-    pub fn new(tex: Arc<dyn Texture>) -> Self {
-        Self { tex }
-    }
-    pub fn new_by_color(color: Color) -> Self {
-        Self {
-            tex: Arc::new(Solid_Color::new(color)),
-        }
-    }
-}
-
-impl Material for Lambertian {
-    fn scatter(
-        &self,
-        r_in: &Ray,
-        hit_record: &HitRecord,
-        attenuation: &mut Color,
-        scattered: &mut Ray,
-    ) -> bool {
-        let mut scatter_direction = hit_record.normal + Vec3::random_unit_vector();
-
-        if scatter_direction.near_zero() {
-            scatter_direction = hit_record.normal;
-        }
-
-        *scattered = Ray::new(hit_record.p, scatter_direction, r_in.time());
-        *attenuation = self.tex.value(hit_record.u, hit_record.v, &hit_record.p);
-        return true;
-    }
-}
-
-pub struct Metal {
-    albedo: Color,
-    fuzz: f64,
-}
-
-impl Metal {
-    pub fn new(albedo: Color, fuzz: f64) -> Self {
-        Self { albedo, fuzz }
-    }
-}
-
-impl Material for Metal {
-    fn scatter(
-        &self,
-        r_in: &Ray,
-        hit_record: &HitRecord,
-        attenuation: &mut Color,
-        scattered: &mut Ray,
-    ) -> bool {
-        let reflected = reflect(r_in.direction(), hit_record.normal).normalize();
-        let scatter_direction = reflected + Vec3::random_unit_vector() * self.fuzz;
-
-        // if scatter_direction.dot(&hit_record.normal) <= 0.0 {
-        //     return false;
-        // }
-
-        *scattered = Ray::new(hit_record.p, scatter_direction, r_in.time());
-        *attenuation = self.albedo;
-        // return scattered.direction().dot(&hit_record.normal) > 0.0;
-        true
-    }
-}
-
-pub struct Dielectric {
-    refraction_index: f64,
-}
-
-impl Dielectric {
-    pub fn new(refraction_index: f64) -> Self {
-        Self { refraction_index }
-    }
-    fn reflectance(cosine: f64, refraction_index: f64) -> f64 {
-        let r0 = ((1.0 - refraction_index) / (1.0 + refraction_index)).powi(2);
-        return r0 + (1.0 - r0) * (1.0 - cosine).powi(5);
-    }
-}
-
-impl Material for Dielectric {
-    fn scatter(
-        &self,
-        r_in: &Ray,
-        hit_record: &HitRecord,
-        attenuation: &mut Color,
-        scattered: &mut Ray,
-    ) -> bool {
-        *attenuation = Color::new(1.0, 1.0, 1.0);
-        let ri = if hit_record.front_face {
-            (1.0 / self.refraction_index)
-        } else {
-            self.refraction_index
-        };
-
-        let unit_direction = r_in.direction().normalize();
-        let cos_theta = hit_record.normal.dot(&(unit_direction * (-1.0))).min(1.0);
-        let sin_theta = (1.0 - cos_theta * cos_theta).sqrt();
-
-        let cannot_refract = ri * sin_theta > 1.0;
-        let mut direction = Vec3::zero();
-
-        if cannot_refract || Self::reflectance(cos_theta, ri) > random_double() {
-            direction = reflect(unit_direction, hit_record.normal);
-        } else {
-            direction = refract(unit_direction, hit_record.normal, ri);
-        }
-
-        *scattered = Ray::new(hit_record.p, direction, r_in.time());
-        return true;
-    }
-}

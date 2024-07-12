@@ -380,6 +380,14 @@ impl Interval{
     }
 }
 
+impl std::ops::Add<f64> for Interval{
+    type Output = Self;
+
+    fn add(self, other: f64) -> Self {
+        Self { min: self.min + other, max: self.max + other }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
