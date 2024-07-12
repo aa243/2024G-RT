@@ -30,6 +30,10 @@ impl Point3{
             _ => panic!("Index out of range"),
         }
     }
+
+    pub fn to_vec3(&self) -> Vec3 {
+        Vec3::new(self.x, self.y, self.z)
+    }
 }
 
 impl Add<Vec3> for Point3 {
@@ -67,6 +71,19 @@ impl std::ops::Sub for Point3{
     }
 }
 
+impl std::ops::Mul<f64> for Point3{
+    type Output = Self;
+
+    fn mul(self, other: f64) -> Self {
+        Self {
+            x: self.x * other,
+            y: self.y * other,
+            z: self.z * other,
+        }
+    }
+
+}
+
 #[derive(Clone, Debug, PartialEq, Copy)]
 pub struct Vec3 {
     pub x: f64,
@@ -77,6 +94,10 @@ pub struct Vec3 {
 impl Vec3 {
     pub fn new(x: f64, y: f64, z: f64) -> Self {
         Self { x, y, z }
+    }
+
+    pub fn to_point3(&self) -> Point3 {
+        Point3::new(self.x, self.y, self.z)
     }
 
     pub fn ones() -> Self {

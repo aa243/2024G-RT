@@ -5,6 +5,9 @@ use crate::File;
 use std::io::Write;
 use crate::Vec3;
 use std::sync::{Arc, Mutex};
+extern crate image;
+use image::{DynamicImage, GenericImageView};
+use std::path::Path;
 
 use image::RgbImage;
 /// the multi-sample write_color() function
@@ -100,6 +103,39 @@ impl std::ops::Div<f64> for Color{
             r: self.r / other,
             g: self.g / other,
             b: self.b / other,
+        }
+    }
+}
+
+pub struct Image {
+    img: DynamicImage,
+
+}
+
+impl Image {
+    // 构造函数，通过文件路径读取jpg图片
+    pub fn new(file_path: &str) -> Result<Self, String> {
+        match image::open(&Path::new(file_path)) {
+            Ok(img) => Ok(Self { img }),
+            Err(e) => Err(format!("Failed to open image: {}", e)),
+        }
+    }
+
+    pub fn height(&self) -> u32 {
+        self.img.height()
+    }
+
+    pub fn width(&self) -> u32 {
+        self.img.width()
+    }
+
+    // 提供一个接口：pixel_data，通过整数i和j得到图片在这一像素的颜色
+    pub fn pixel_data(&self, i: u32, j: u32) -> Option<(u8, u8, u8)> {
+        if i < self.img.width() && j < self.img.height() {
+            let pixel = self.img.get_pixel(i, j).0; // 获取像素值
+            Some((pixel[0], pixel[1], pixel[2])) // 返回RGB值
+        } else {
+            None // 超出图片范围，返回None
         }
     }
 }

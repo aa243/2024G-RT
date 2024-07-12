@@ -1,18 +1,28 @@
 #[path = "./color.rs"]
 mod color;
 pub use color::*;
+#[path = "./texture.rs"]
+mod texture;
+pub use texture::*;
+#[path = "./perlin.rs"]
+mod perlin;
+pub use perlin::Perlin;
+#[path = "./quad.rs"]
+mod quad;
+pub use quad::Quad;
 #[path = "./sup.rs"]
 mod sup;
 use crate::File;
-use indicatif::ProgressBar;
-use rand::random;
-use rayon::prelude::*;
-use std::io::{Write,BufWriter};
-use std::sync::Arc;
-pub use sup::*;
+// use indicatif::ProgressBar;
 use crossbeam::thread;
+use image::ImageBuffer;
+use rand::random;
+use std::f64::consts::PI;
+use std::sync::atomic::Ordering;
+use std::sync::Condvar;
 use std::sync::Mutex;
-use image::{ImageBuffer, RgbImage}; //接收render传回来的图片，在main中文件输出
+use std::sync::{atomic::AtomicUsize, Arc};
+pub use sup::*; //接收render传回来的图片，在main中文件输出
 
 // Note that currently it cannot distinguish whether object is in front of the camera or behind the camera.
 // pub fn hit_sphere(center: Point3, radius: f64, r: Ray) -> f64{
@@ -30,7 +40,6 @@ use image::{ImageBuffer, RgbImage}; //接收render传回来的图片，在main�
 // }
 
 static INFINITY: f64 = f64::INFINITY;
-static PI: f64 = std::f64::consts::PI;
 
 // pub fn ray_color(r: Ray, world: &Box<dyn Hittable>) -> Color {
 //     let mut rec = HitRecord{p: Point3::zero(), normal: Vec3::zero(), t: 0.0, front_face: true};
@@ -48,10 +57,10 @@ static PI: f64 = std::f64::consts::PI;
 //     return color1 * (1.0-a) + color2 * a;
 // }
 
-pub trait Hittable<'a>: Send + Sync {
+pub trait Hittable: Send + Sync {
     fn hit(&self, r: Ray, ray_t: Interval, rec: &mut HitRecord) -> bool;
     fn display(&self);
-    fn get_material(&self) -> Option<&'a dyn Material>;
+    fn get_material(&self) -> Option<&'static dyn Material>;
     fn bounding_box(&self) -> AABB;
 }
 
@@ -62,14 +71,18 @@ pub struct HitRecord {
     pub t: f64,
     pub front_face: bool,
     pub mat: Option<&'static dyn Material>, // Change the lifetime to 'static
+    pub u: f64,
+    pub v: f64,
 }
-impl<'a> HitRecord {
+impl HitRecord {
     pub fn new(
         p: Point3,
         normal: Vec3,
         t: f64,
         front_face: bool,
         mat: Option<&'static dyn Material>,
+        u: f64,
+        v: f64,
     ) -> Self {
         Self {
             p,
@@ -77,6 +90,8 @@ impl<'a> HitRecord {
             t,
             front_face,
             mat,
+            u,
+            v,
         }
     }
     pub fn set_face_normal(&mut self, r: Ray, outward_normal: Vec3) {
@@ -132,9 +147,15 @@ impl Sphere {
     pub fn sphere_center(&self, time: f64) -> Point3 {
         return self.center + self.center_vec * time;
     }
+    fn get_sphere_uv(p: Point3, u: &mut f64, v: &mut f64) {
+        let phi = (-p.z).atan2(p.x) + PI;
+        let theta = (-p.y).acos();
+        *u = phi / (2.0 * PI);
+        *v = theta / PI;
+    }
 }
 
-impl<'a> Hittable<'a> for Sphere {
+impl Hittable for Sphere {
     fn hit(&self, ray: Ray, ray_t: Interval, rec: &mut HitRecord) -> bool {
         let center = if self.is_moving {
             self.sphere_center(ray.time())
@@ -165,6 +186,7 @@ impl<'a> Hittable<'a> for Sphere {
         rec.p = ray.at(rec.t);
         let outward_normal = (rec.p - center) / self.radius;
         rec.set_face_normal(ray, outward_normal);
+        Self::get_sphere_uv(outward_normal.to_point3(), &mut rec.u, &mut rec.v);
         rec.mat = self.get_material();
 
         return true;
@@ -173,7 +195,7 @@ impl<'a> Hittable<'a> for Sphere {
         println!("center: {:?}, radius: {:?}", self.center, self.radius);
     }
 
-    fn get_material(&self) -> Option<&'a dyn Material> {
+    fn get_material(&self) -> Option<&'static dyn Material> {
         self.mat
     }
 
@@ -183,7 +205,7 @@ impl<'a> Hittable<'a> for Sphere {
 }
 
 pub struct HittableList {
-    pub objects: Vec<Arc<dyn Hittable<'static>>>,
+    pub objects: Vec<Arc<dyn Hittable>>,
     bbox: AABB,
 }
 
@@ -194,7 +216,7 @@ impl HittableList {
             bbox: AABB::default(),
         }
     }
-    pub fn add(&mut self, object: Arc<dyn Hittable<'static>>) {
+    pub fn add(&mut self, object: Arc<dyn Hittable>) {
         self.bbox = AABB::new_by_aabb(self.bbox, object.bounding_box());
         self.objects.push(object);
     }
@@ -203,9 +225,9 @@ impl HittableList {
     }
 }
 
-impl<'a> Hittable<'static> for HittableList {
+impl Hittable for HittableList {
     fn hit(&self, r: Ray, ray_t: Interval, rec: &mut HitRecord) -> bool {
-        let mut temp_rec = HitRecord::new(Point3::zero(), Vec3::zero(), 0.0, false, None);
+        let mut temp_rec = HitRecord::new(Point3::zero(), Vec3::zero(), 0.0, false, None, 0.0, 0.0);
         let mut hit_anything = false;
         let mut closest_so_far = ray_t.max;
 
@@ -234,13 +256,13 @@ impl<'a> Hittable<'static> for HittableList {
 }
 
 pub struct BvhNode {
-    left: Arc<dyn Hittable<'static>>,
-    right: Arc<dyn Hittable<'static>>,
+    left: Arc<dyn Hittable>,
+    right: Arc<dyn Hittable>,
     bbox: AABB,
 }
 
 impl BvhNode {
-    pub fn new(objects: &mut Vec<Arc<dyn Hittable<'static>>>, start: usize, end: usize) -> Self {
+    pub fn new(objects: &mut Vec<Arc<dyn Hittable>>, start: usize, end: usize) -> Self {
         let mut bbox = AABB::default();
         for object_index in start..end {
             bbox = AABB::new_by_aabb(bbox, objects[object_index].bounding_box());
@@ -256,8 +278,8 @@ impl BvhNode {
         let object_span = end - start;
         // println!("start: {}, end: {}", start, end);
         // println!("object_span: {:?}", object_span);
-        let mut left: Arc<dyn Hittable<'static>> = objects[start].clone();
-        let mut right: Arc<dyn Hittable<'static>> = objects[start].clone();
+        let mut left: Arc<dyn Hittable> = objects[start].clone();
+        let mut right: Arc<dyn Hittable> = objects[start].clone();
 
         if object_span == 1 {
             left = objects[start].clone();
@@ -266,22 +288,27 @@ impl BvhNode {
             left = objects[start].clone();
             right = objects[start + 1].clone();
         } else {
-            let comparator_closure = |a: &Arc<dyn Hittable<'static>>, b: &Arc<dyn Hittable<'static>>| -> std::cmp::Ordering {
-                if comparator(a, b) {
-                    std::cmp::Ordering::Less
-                } else if comparator(b, a) {
-                    std::cmp::Ordering::Greater
-                } else {
-                    std::cmp::Ordering::Equal
-                }
-            };
-            objects[start..end].sort_unstable_by( comparator_closure);
+            let comparator_closure =
+                |a: &Arc<dyn Hittable>, b: &Arc<dyn Hittable>| -> std::cmp::Ordering {
+                    if comparator(a, b) {
+                        std::cmp::Ordering::Less
+                    } else if comparator(b, a) {
+                        std::cmp::Ordering::Greater
+                    } else {
+                        std::cmp::Ordering::Equal
+                    }
+                };
+            objects[start..end].sort_unstable_by(comparator_closure);
             let mid = start + object_span / 2;
             left = Arc::new(Self::new(objects, start, mid));
             right = Arc::new(Self::new(objects, mid, end));
         }
 
-        Self { left: left, right: right, bbox: bbox }
+        Self {
+            left: left,
+            right: right,
+            bbox: bbox,
+        }
     }
     pub fn new_by_object_list(list: &HittableList) -> Self {
         let mut objects = list.objects.clone();
@@ -289,23 +316,23 @@ impl BvhNode {
         // println!("number: {:?}", number);
         Self::new(&mut objects, 0, number)
     }
-    fn box_compare(a: &Arc<dyn Hittable<'static>>, b: &Arc<dyn Hittable<'static>>, axis_index: usize) -> bool {
+    fn box_compare(a: &Arc<dyn Hittable>, b: &Arc<dyn Hittable>, axis_index: usize) -> bool {
         let box_a_interval = a.bounding_box().axis_interval(axis_index);
         let box_b_interval = b.bounding_box().axis_interval(axis_index);
         return box_a_interval.min < box_b_interval.min;
     }
-    fn box_x_compare(a: &Arc<dyn Hittable<'static>>, b: &Arc<dyn Hittable<'static>>) -> bool {
+    fn box_x_compare(a: &Arc<dyn Hittable>, b: &Arc<dyn Hittable>) -> bool {
         Self::box_compare(a, b, 0)
     }
-    fn box_y_compare(a: &Arc<dyn Hittable<'static>>, b: &Arc<dyn Hittable<'static>>) -> bool {
+    fn box_y_compare(a: &Arc<dyn Hittable>, b: &Arc<dyn Hittable>) -> bool {
         Self::box_compare(a, b, 1)
     }
-    fn box_z_compare(a: &Arc<dyn Hittable<'static>>, b: &Arc<dyn Hittable<'static>>) -> bool {
+    fn box_z_compare(a: &Arc<dyn Hittable>, b: &Arc<dyn Hittable>) -> bool {
         Self::box_compare(a, b, 2)
     }
 }
 
-impl<'a> Hittable<'a> for BvhNode {
+impl Hittable for BvhNode {
     fn hit(&self, r: Ray, ray_t: Interval, rec: &mut HitRecord) -> bool {
         if !self.bbox.hit(r, ray_t) {
             return false;
@@ -324,7 +351,7 @@ impl<'a> Hittable<'a> for BvhNode {
     fn display(&self) {
         println!("BvhNode");
     }
-    fn get_material(&self) -> Option<&'a dyn Material> {
+    fn get_material(&self) -> Option<&'static dyn Material> {
         None
     }
 }
@@ -345,10 +372,11 @@ impl AABB {
         }
     }
     pub fn new(x: Interval, y: Interval, z: Interval) -> Self {
-        Self { x, y, z }
+        let ret = Self { x, y, z };
+        ret.pad_to_minimums()
     }
     pub fn new_by_point(a: Point3, b: Point3) -> Self {
-        Self {
+        let ret = Self {
             x: if a.x <= b.x {
                 Interval::new(a.x, b.x)
             } else {
@@ -364,7 +392,8 @@ impl AABB {
             } else {
                 Interval::new(b.z, a.z)
             },
-        }
+        };
+        ret.pad_to_minimums()
     }
     pub fn new_by_aabb(a: AABB, b: AABB) -> Self {
         Self {
@@ -383,18 +412,9 @@ impl AABB {
     }
     pub fn longest_axis(&self) -> usize {
         if self.x.size() > self.y.size() {
-            return if self.x.size() > self.z.size() {
-                0
-            } else {
-                2
-            }
+            return if self.x.size() > self.z.size() { 0 } else { 2 };
         } else {
-            return if self.y.size() > self.z.size() {
-                1
-            } else {
-                2
-            }
-        
+            return if self.y.size() > self.z.size() { 1 } else { 2 };
         }
     }
     pub fn hit(&self, r: Ray, ray_t: Interval) -> bool {
@@ -428,6 +448,20 @@ impl AABB {
             }
         }
         true
+    }
+    fn pad_to_minimums(mut self) -> Self {
+        let delta = 0.00001;
+
+        if self.x.size() < delta {
+            self.x = self.x.expand(delta);
+        }
+        if self.y.size() < delta {
+            self.y = self.y.expand(delta);
+        }
+        if self.z.size() < delta {
+            self.z = self.z.expand(delta);
+        }
+        self
     }
 }
 
@@ -536,6 +570,8 @@ impl Camera {
             t: 0.0,
             front_face: true,
             mat: None,
+            u: 0.0,
+            v: 0.0,
         };
         let hit = world.hit(r, Interval::new(0.001, INFINITY), &mut rec);
         if hit {
@@ -632,8 +668,13 @@ impl Camera {
     // }
 
     pub fn render(&mut self, world: &Arc<dyn Hittable>, path: &str) {
+        const THREAD_LIMIT: usize = 16;
+        const NUM_THREADS: usize = 32;
         self.initialize();
-        let img = Arc::new(Mutex::new(ImageBuffer::new(self.image_width, self.image_height)));
+        let img = Arc::new(Mutex::new(ImageBuffer::new(
+            self.image_width,
+            self.image_height,
+        )));
         // let file = File::create(path).expect("Failed to create file");
         // let file = BufWriter::new(file);
         // let file = Arc::new(Mutex::new(file));
@@ -642,33 +683,55 @@ impl Camera {
         //     .expect("Failed to write header");
 
         thread::scope(|s| {
-            let num_threads = 10;
-            let rows_per_thread = self.image_height / num_threads as u32;
+            let rows_per_thread = self.image_height / NUM_THREADS as u32;
+            let thread_count = Arc::new(AtomicUsize::new(0));
+            let thread_number_controller = Arc::new(Condvar::new());
 
-            for thread_id in 0..num_threads {
-                let world_clone = Arc::clone(&world);
+            for thread_id in 0..NUM_THREADS {
+                // let world_clone = Arc::clone(&world);
                 // let file_clone = Arc::clone(&file);
+
+                let lock_for_condv = Mutex::new(false);
+                while !(thread_count.load(Ordering::SeqCst) < THREAD_LIMIT) {
+                    thread_number_controller
+                        .wait(lock_for_condv.lock().unwrap())
+                        .unwrap();
+                }
+
                 let mut img_clone = Arc::clone(&img);
                 let camera_clone = self.clone();
+                let thread_count = Arc::clone(&thread_count);
+                let thread_number_controller = Arc::clone(&thread_number_controller);
                 let start_row = thread_id * rows_per_thread as usize;
-                let end_row = if thread_id == num_threads - 1 {
+                let end_row = if thread_id == NUM_THREADS - 1 {
                     self.image_height as usize
                 } else {
                     start_row + rows_per_thread as usize
                 };
+
+                thread_count.fetch_add(1, Ordering::SeqCst);
 
                 s.spawn(move |_| {
                     let mut results: Vec<(usize, usize, [u8; 3])> = Vec::new();
 
                     for j in start_row..end_row {
                         for i in 0..camera_clone.image_width as usize {
-                            let pixel_color: Color = (0..camera_clone.samples_per_pixel)
-                                .map(|_| {
-                                    let r = camera_clone.get_ray(i as f64, j as f64);
-                                    Self::ray_color(r, &world_clone, camera_clone.max_depth)
-                                })
-                                .fold(Color::new(0.0, 0.0, 0.0), |sum, c| sum + c)
-                                / camera_clone.samples_per_pixel as f64;
+                            // let pixel_color: Color = (0..camera_clone.samples_per_pixel)
+                            //     .map(|_| {
+                            //         let r = camera_clone.get_ray(i as f64, j as f64);
+                            //         Self::ray_color(r, &world_clone, camera_clone.max_depth)
+                            //     })
+                            //     .fold(Color::new(0.0, 0.0, 0.0), |sum, c| sum + c)
+                            //     / camera_clone.samples_per_pixel as f64;
+
+                            let mut pixel_color = Color::new(0.0, 0.0, 0.0);
+                            for _ in 0..camera_clone.samples_per_pixel {
+                                let r = camera_clone.get_ray(i as f64, j as f64);
+                                pixel_color = pixel_color
+                                    + Self::ray_color(r, &world, camera_clone.max_depth);
+                            }
+                            pixel_color = pixel_color / camera_clone.samples_per_pixel as f64;
+                            // write_color(pixel_color.to_rgb(), &mut file);
                             results.push((i, j, pixel_color.to_rgb()));
                         }
                     }
@@ -677,9 +740,12 @@ impl Camera {
                     for (i, j, color) in results {
                         write_color(color, &mut img_clone, i, j);
                     }
+                    thread_count.fetch_sub(1, Ordering::SeqCst);
+                    thread_number_controller.notify_one();
                 });
             }
-        }).unwrap();
+        })
+        .unwrap();
         let cloned_inner_value = (*img).lock().unwrap().clone();
         let output_image: image::DynamicImage = image::DynamicImage::ImageRgb8(cloned_inner_value);
         let mut output_file: File = File::create(path).unwrap();
@@ -713,12 +779,17 @@ pub trait Material: Send + Sync {
 }
 
 pub struct Lambertian {
-    albedo: Color,
+    tex: Arc<dyn Texture>,
 }
 
 impl Lambertian {
-    pub fn new(albedo: Color) -> Self {
-        Self { albedo }
+    pub fn new(tex: Arc<dyn Texture>) -> Self {
+        Self { tex }
+    }
+    pub fn new_by_color(color: Color) -> Self {
+        Self {
+            tex: Arc::new(Solid_Color::new(color)),
+        }
     }
 }
 
@@ -737,7 +808,7 @@ impl Material for Lambertian {
         }
 
         *scattered = Ray::new(hit_record.p, scatter_direction, r_in.time());
-        *attenuation = self.albedo;
+        *attenuation = self.tex.value(hit_record.u, hit_record.v, &hit_record.p);
         return true;
     }
 }
