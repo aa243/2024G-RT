@@ -375,9 +375,65 @@ fn cornell_smoke() {
     println!("Output image as \"{}\"\n Author: {}", path, AUTHOR);
 }
 
+fn final_scene(image_width: u32, samples_per_pixel: u32, max_depth: u32) {
+    let path = "output/book2/final_scene.png";
+
+    let LIGHT = Arc::new(DiffuseLight::new_by_color(Color::new(7.0,7.0,7.0)));
+    let RED = Arc::new(Lambertian::new_by_color(Color::new(0.65,0.05,0.05)));
+    let WHITE = Arc::new(Lambertian::new_by_color(Color::new(0.73,0.73,0.73)));
+    let GREEN = Arc::new(Lambertian::new_by_color(Color::new(0.12,0.45,0.15)));
+
+    let quad1 = Arc::new(Quad::new(Point3::new(555.0, 0.0, 0.0), Vec3::new(0.0, 555.0, 0.0), Vec3::new(0.0, 0.0, 555.0), Some(Arc::clone(&GREEN) as Arc<dyn Material>)));
+    let quad2 = Arc::new(Quad::new(Point3::new(0.0, 0.0, 0.0), Vec3::new(0.0, 555.0, 0.0), Vec3::new(0.0, 0.0, 555.0), Some(Arc::clone(&RED) as Arc<dyn Material>)));
+    let quad3 = Arc::new(Quad::new(Point3::new(113.0, 554.0, 127.0), Vec3::new(330.0, 0.0, 0.0), Vec3::new(0.0, 0.0, 305.0), Some(Arc::clone(&LIGHT) as Arc<dyn Material>)));
+    let quad4 = Arc::new(Quad::new(Point3::new(0.0, 0.0, 0.0), Vec3::new(555.0, 0.0, 0.0), Vec3::new(0.0, 0.0, 555.0), Some(Arc::clone(&WHITE) as Arc<dyn Material>)));
+    let quad5 = Arc::new(Quad::new(Point3::new(0.0, 0.0, 555.0), Vec3::new(555.0, 0.0, 0.0), Vec3::new(0.0, 555.0, 0.0), Some(Arc::clone(&WHITE) as Arc<dyn Material>)));
+    let quad6 = Arc::new(Quad::new(Point3::new(555.0, 555.0, 555.0), Vec3::new(-555.0, 0.0, 0.0), Vec3::new(0.0, 0.0, -555.0), Some(Arc::clone(&WHITE) as Arc<dyn Material>)));
+    let box1 = get_box(Point3::new(0.0,0.0,0.0), Point3::new(165.0, 330.0, 165.0), Some(Arc::clone(&WHITE) as Arc<dyn Material>));
+    let box1 = Arc::new(RotateY::new(box1, 15.0));
+    let box1 = Arc::new(Translate::new(box1, Vec3::new(265.0,0.0,295.0)));
+    let box2 = get_box(Point3::new(0.0,0.0,0.0), Point3::new(165.0, 165.0, 165.0), Some(Arc::clone(&WHITE) as Arc<dyn Material>));
+    let box2 = Arc::new(RotateY::new(box2, -18.0));
+    let box2 = Arc::new(Translate::new(box2, Vec3::new(130.0,0.0,65.0)));
+    let smoke1 = Arc::new(ConstantMedium::new_by_color(Arc::clone(&box1) as Arc<dyn Hittable>, 0.01, Color::new(0.0,0.0,0.0)));
+    let smoke2 = Arc::new(ConstantMedium::new_by_color(Arc::clone(&box2) as Arc<dyn Hittable>, 0.01, Color::new(1.0,1.0,1.0)));
+    
+    let mut world = HittableList::new();
+    world.add(quad1);
+    world.add(quad2);
+    world.add(quad3);
+    world.add(quad4);
+    world.add(quad5);
+    world.add(quad6);
+    world.add(smoke1);
+    world.add(smoke2);
+
+    let mut bvh_world: HittableList = HittableList::new();
+    bvh_world.add(Arc::new(BvhNode::new_by_object_list(&world)));
+    let boxed_world = Arc::new(bvh_world) as Arc<dyn Hittable>;
+
+    let aspect_ratio = 1.0;
+    let image_width = image_width;
+    let samples_per_pixel = samples_per_pixel;
+    let max_depth = max_depth;
+    let vfov = 40.0;
+    let lookfrom = Point3::new(478.0,278.0,-600.0);
+    let lookat = Point3::new(278.0, 278.0, 0.0);
+    let vup = Vec3::new(0.0, 1.0, 0.0);
+    let defocus_angle = 0.0;
+    let focus_dist = 10.0;
+    let background = Color::new(0.0, 0.0, 0.0);
+    let mut cam = Camera::new(aspect_ratio, image_width, samples_per_pixel, max_depth, vfov, lookfrom, lookat, vup, defocus_angle, focus_dist, background);
+
+    cam.render(&boxed_world, path);
+
+    // Save the image
+    println!("Output image as \"{}\"\n Author: {}", path, AUTHOR);
+}
+
 fn main() {
     
-    match 8 {
+    match 9 {
         1 => bouncing_spheres(),
         2 => checkered_spheres(),
         3 => earth(),
@@ -386,7 +442,8 @@ fn main() {
         6 => simple_light(),
         7 => cornell_box(),
         8 => cornell_smoke(),
-        _ => println!("Invalid input."),
+        9 => final_scene(800,10000,40),
+        _ => final_scene(400,250,4),
     }
 
     // let output_image: image::DynamicImage = image::DynamicImage::ImageRgb8(img);

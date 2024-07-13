@@ -961,6 +961,7 @@ impl Camera {
                             pixel_color = pixel_color / camera_clone.samples_per_pixel as f64;
                             // write_color(pixel_color.to_rgb(), &mut file);
                             results.push((i, j, pixel_color.to_rgb()));
+                            bar.inc(1);
                         }
                     }
 
@@ -975,6 +976,7 @@ impl Camera {
             }
         })
         .unwrap();
+        bar.finish();
         let cloned_inner_value = (*img).lock().unwrap().clone();
         let output_image: image::DynamicImage = image::DynamicImage::ImageRgb8(cloned_inner_value);
         let mut output_file: File = File::create(path).unwrap();
