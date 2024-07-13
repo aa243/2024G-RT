@@ -30,6 +30,14 @@ impl Point3{
             _ => panic!("Index out of range"),
         }
     }
+    pub fn iloc_mut(&mut self, i: usize, val: f64) {
+        match i {
+            0 => self.x = val,
+            1 => self.y = val,
+            2 => self.z = val,
+            _ => panic!("Index out of range"),
+        }
+    }
 
     pub fn to_vec3(&self) -> Vec3 {
         Vec3::new(self.x, self.y, self.z)

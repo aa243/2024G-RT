@@ -10,12 +10,12 @@ pub use perlin::Perlin;
 #[path = "./quad.rs"]
 mod quad;
 pub use quad::*;
-#[path = "./sup.rs"]
-mod sup;
 #[path = "./material.rs"]
 mod material;
-pub use material::*;
+#[path = "./sup.rs"]
+mod sup;
 use crate::File;
+pub use material::*;
 // use indicatif::ProgressBar;
 use crossbeam::thread;
 use image::ImageBuffer;
@@ -63,17 +63,17 @@ static INFINITY: f64 = f64::INFINITY;
 pub trait Hittable: Send + Sync {
     fn hit(&self, r: Ray, ray_t: Interval, rec: &mut HitRecord) -> bool;
     fn display(&self);
-    fn get_material(&self) -> Option<&'static dyn Material>;
+    fn get_material(&self) -> Option<Arc<dyn Material>>;
     fn bounding_box(&self) -> AABB;
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub struct HitRecord {
     pub p: Point3,
     pub normal: Vec3,
     pub t: f64,
     pub front_face: bool,
-    pub mat: Option<&'static dyn Material>, // Change the lifetime to 'static
+    pub mat: Option<Arc<dyn Material>>, // Change the lifetime to 'static
     pub u: f64,
     pub v: f64,
 }
@@ -83,7 +83,7 @@ impl HitRecord {
         normal: Vec3,
         t: f64,
         front_face: bool,
-        mat: Option<&'static dyn Material>,
+        mat: Option<Arc<dyn Material>>,
         u: f64,
         v: f64,
     ) -> Self {
@@ -97,6 +97,17 @@ impl HitRecord {
             v,
         }
     }
+    pub fn default() -> Self {
+        Self {
+            p: Point3::zero(),
+            normal: Vec3::zero(),
+            t: 0.0,
+            front_face: false,
+            mat: None,
+            u: 0.0,
+            v: 0.0,
+        }
+    }
     pub fn set_face_normal(&mut self, r: Ray, outward_normal: Vec3) {
         self.front_face = r.direction().dot(&outward_normal) < 0.0;
         self.normal = if self.front_face {
@@ -107,11 +118,11 @@ impl HitRecord {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub struct Sphere {
     center: Point3,
     radius: f64,
-    mat: Option<&'static dyn Material>,
+    mat: Option<Arc<dyn Material>>,
     is_moving: bool,
     center_vec: Vec3,
     bbox: AABB,
@@ -121,7 +132,7 @@ impl Sphere {
     pub fn new(
         center: Point3,
         radius: f64,
-        mat: Option<&'static dyn Material>,
+        mat: Option<Arc<dyn Material>>,
         center2: Point3,
     ) -> Self {
         let rvec = Vec3::new(radius, radius, radius);
@@ -136,7 +147,7 @@ impl Sphere {
             bbox: AABB::new_by_aabb(box1, box2),
         }
     }
-    pub fn new_static(center: Point3, radius: f64, mat: Option<&'static dyn Material>) -> Self {
+    pub fn new_static(center: Point3, radius: f64, mat: Option<Arc<dyn Material>>) -> Self {
         let rvec = Vec3::new(radius, radius, radius);
         Self {
             center,
@@ -198,8 +209,8 @@ impl Hittable for Sphere {
         println!("center: {:?}, radius: {:?}", self.center, self.radius);
     }
 
-    fn get_material(&self) -> Option<&'static dyn Material> {
-        self.mat
+    fn get_material(&self) -> Option<Arc<dyn Material>> {
+        self.mat.as_ref().map(Arc::clone)
     }
 
     fn bounding_box(&self) -> AABB {
@@ -238,7 +249,7 @@ impl Hittable for HittableList {
             if object.hit(r, Interval::new(ray_t.min, closest_so_far), &mut temp_rec) {
                 hit_anything = true;
                 closest_so_far = temp_rec.t;
-                *rec = temp_rec;
+                *rec = temp_rec.clone();
             }
         }
 
@@ -250,7 +261,7 @@ impl Hittable for HittableList {
         }
     }
 
-    fn get_material(&self) -> Option<&'static dyn Material> {
+    fn get_material(&self) -> Option<Arc<dyn Material>> {
         None
     }
     fn bounding_box(&self) -> AABB {
@@ -354,7 +365,7 @@ impl Hittable for BvhNode {
     fn display(&self) {
         println!("BvhNode");
     }
-    fn get_material(&self) -> Option<&'static dyn Material> {
+    fn get_material(&self) -> Option<Arc<dyn Material>> {
         None
     }
 }
@@ -365,7 +376,7 @@ pub struct Translate {
     bbox: AABB,
 }
 
-impl Translate{
+impl Translate {
     pub fn new(object: Arc<dyn Hittable>, offset: Vec3) -> Self {
         let bbox = object.bounding_box();
         Self {
@@ -391,10 +402,159 @@ impl Hittable for Translate {
     fn display(&self) {
         println!("Translate");
     }
-    fn get_material(&self) -> Option<&'static dyn Material> {
+    fn get_material(&self) -> Option<Arc<dyn Material>> {
         None
     }
+}
 
+pub struct RotateY {
+    object: Arc<dyn Hittable>,
+    sin_theta: f64,
+    cos_theta: f64,
+    bbox: AABB,
+}
+
+impl RotateY {
+    pub fn new(object: Arc<dyn Hittable>, angle: f64) -> Self {
+        let radians = angle.to_radians();
+        let sin_theta = radians.sin();
+        let cos_theta = radians.cos();
+        let bbox = object.bounding_box();
+        let mut min = Point3::new(INFINITY, INFINITY, INFINITY);
+        let mut max = Point3::new(-INFINITY, -INFINITY, -INFINITY);
+        for i in 0..2 {
+            for j in 0..2 {
+                for k in 0..2 {
+                    let x = i as f64 * bbox.x.max + (1 - i) as f64 * bbox.x.min;
+                    let y = j as f64 * bbox.y.max + (1 - j) as f64 * bbox.y.min;
+                    let z = k as f64 * bbox.z.max + (1 - k) as f64 * bbox.z.min;
+                    let newx = cos_theta * x + sin_theta * z;
+                    let newz = -sin_theta * x + cos_theta * z;
+                    let tester = Vec3::new(newx, y, newz);
+                    for c in 0..3 {
+                        if tester.iloc(c) > max.iloc(c) {
+                            max.iloc_mut(c, tester.iloc(c));
+                        }
+                        if tester.iloc(c) < min.iloc(c) {
+                            min.iloc_mut(c, tester.iloc(c));
+                        }
+                    }
+                }
+            }
+        }
+        Self {
+            object,
+            sin_theta,
+            cos_theta,
+            bbox: AABB::new_by_point(min, max),
+        }
+    }
+}
+
+impl Hittable for RotateY {
+    fn hit(&self, r: Ray, ray_t: Interval, rec: &mut HitRecord) -> bool {
+        let origin = r.origin();
+        let direction = r.direction();
+        let origin_x = self.cos_theta * origin.x - self.sin_theta * origin.z;
+        let origin_z = self.sin_theta * origin.x + self.cos_theta * origin.z;
+        let direction_x = self.cos_theta * direction.x - self.sin_theta * direction.z;
+        let direction_z = self.sin_theta * direction.x + self.cos_theta * direction.z;
+        let rotated_r = Ray::new(
+            Point3::new(origin_x, origin.y, origin_z),
+            Vec3::new(direction_x, direction.y, direction_z),
+            r.time(),
+        );
+        if !self.object.hit(rotated_r, ray_t, rec) {
+            return false;
+        }
+        let p = rec.p;
+        let normal = rec.normal;
+        let p_x = self.cos_theta * p.x + self.sin_theta * p.z;
+        let p_z = -self.sin_theta * p.x + self.cos_theta * p.z;
+        let normal_x = self.cos_theta * normal.x + self.sin_theta * normal.z;
+        let normal_z = -self.sin_theta * normal.x + self.cos_theta * normal.z;
+        rec.p = Point3::new(p_x, p.y, p_z);
+        rec.normal = Vec3::new(normal_x, normal.y, normal_z);
+        return true;
+    }
+    fn bounding_box(&self) -> AABB {
+        self.bbox
+    }
+    fn display(&self) {
+        println!("RotateY");
+    }
+    fn get_material(&self) -> Option<Arc<dyn Material>> {
+        None
+    }
+}
+
+pub struct ConstantMedium {
+    boundary: Arc<dyn Hittable>,
+    phase_function: Option<Arc<dyn Material>>,
+    neg_inv_density: f64,
+}
+
+impl ConstantMedium {
+    pub fn new_by_color(boundary: Arc<dyn Hittable>, density: f64, color: Color) -> Self {
+        Self {
+            boundary,
+            phase_function: Some(Arc::new(Isotropic::new_by_color(color)) as Arc<dyn Material>),
+            neg_inv_density: -1.0 / density,
+        }
+    }
+    pub fn new_by_tex(boundary: Arc<dyn Hittable>, density: f64, tex: Arc<dyn Texture>) -> Self {
+        Self {
+            boundary,
+            phase_function: Some(Arc::new(Isotropic::new(tex)) as Arc<dyn Material>),
+            neg_inv_density: -1.0 / density,
+        }
+    }
+}
+
+impl Hittable for ConstantMedium {
+    fn hit(&self, r: Ray, ray_t: Interval, rec: &mut HitRecord) -> bool {
+        let mut rec1 = HitRecord::default();
+        let mut rec2 = HitRecord::default();
+        if !self.boundary.hit(r, Interval::new(-INFINITY, INFINITY), &mut rec1) {
+            return false;
+        }
+        if !self.boundary.hit(r, Interval::new(rec1.t + 0.0001, INFINITY), &mut rec2) {
+            return false;
+        }
+        if rec1.t < ray_t.min {
+            rec1.t = ray_t.min;
+        }
+        if rec2.t > ray_t.max {
+            rec2.t = ray_t.max;
+        }
+        if rec1.t >= rec2.t {
+            return false;
+        }
+        if rec1.t < 0.0 {
+            rec1.t = 0.0;
+        }
+        let ray_length = r.direction().length();
+        let distance_inside_boundary = (rec2.t - rec1.t) * ray_length;
+        let hit_distance = self.neg_inv_density * random_double().ln();
+        if hit_distance > distance_inside_boundary {
+            return false;
+        }
+        rec.t = rec1.t + hit_distance / ray_length;
+        rec.p = r.at(rec.t);
+        rec.normal = Vec3::new(1.0, 0.0, 0.0);
+        rec.front_face = true;
+        rec.mat = self.phase_function.clone();
+        return true;
+    }
+    fn bounding_box(&self) -> AABB {
+        self.boundary.bounding_box()
+    }
+    fn display(&self) {
+        println!("ConstantMedium");
+    }
+    fn get_material(&self) -> Option<Arc<dyn Material>> {
+        self.phase_function.clone()
+    }
 }
 
 // AABB
@@ -631,8 +791,7 @@ impl Camera {
         let hit = world.hit(r, Interval::new(0.001, INFINITY), &mut rec);
         if !hit {
             return self.background;
-        }
-        else {
+        } else {
             // lambertian
             // let direct = rec.normal + Vec3::random_unit_vector();
 
@@ -641,14 +800,17 @@ impl Camera {
 
             let mut scattered = Ray::new(Point3::zero(), Vec3::zero(), 0.0);
             let mut attenuation = Color::new(0.0, 0.0, 0.0);
-            let color_from_emission = rec.mat.unwrap().emitted(rec.u, rec.v, &rec.p);
+            let rec_clone = rec.clone();
+            let color_from_emission = rec_clone.mat.unwrap().emitted(rec.u, rec.v, &rec.p);
+            let rec_clone = rec.clone();
 
             if rec
                 .mat
                 .unwrap()
-                .scatter(&r, &rec, &mut attenuation, &mut scattered)
+                .scatter(&r, &rec_clone, &mut attenuation, &mut scattered)
             {
-                let color_from_scatter =  attenuation.element_mul(self.ray_color(scattered, world, depth - 1));
+                let color_from_scatter =
+                    attenuation.element_mul(self.ray_color(scattered, world, depth - 1));
                 return color_from_emission + color_from_scatter;
             }
 
@@ -693,9 +855,9 @@ impl Camera {
 
     // pub fn render(&mut self, world: &Arc<dyn Hittable>, path: &str) {
     //     self.initialize();
-    //     let bar: ProgressBar = if Self::is_ci() {
-    //         let output_image: image::DynamicImage = image::DynamicImage::ImageRgb8(*img.clone());e_height * self.image_width) as u64)
-    //     };
+        // let bar: ProgressBar = if Self::is_ci() {
+        //     let output_image: image::DynamicImage = image::DynamicImage::ImageRgb8(*img.clone());e_height * self.image_width) as u64)
+        // };
 
     //     let mut file = File::create(path).expect("Failed to create file");
     //     writeln!(file, "P3\n{} {}\n255", self.image_width, self.image_height)
@@ -726,12 +888,13 @@ impl Camera {
 
     pub fn render(&mut self, world: &Arc<dyn Hittable>, path: &str) {
         const THREAD_LIMIT: usize = 16;
-        const NUM_THREADS: usize = 32;
+        const NUM_THREADS: usize = 200;
         self.initialize();
         let img = Arc::new(Mutex::new(ImageBuffer::new(
             self.image_width,
             self.image_height,
         )));
+        
         // let file = File::create(path).expect("Failed to create file");
         // let file = BufWriter::new(file);
         // let file = Arc::new(Mutex::new(file));
@@ -824,4 +987,3 @@ pub fn random_between(min: f64, max: f64) -> f64 {
 pub fn random_int(min: i32, max: i32) -> i32 {
     return random_between(min as f64, (max + 1) as f64) as i32;
 }
-
