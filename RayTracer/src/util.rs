@@ -16,7 +16,7 @@ mod material;
 mod sup;
 use crate::File;
 pub use material::*;
-// use indicatif::ProgressBar;
+use indicatif::ProgressBar;
 use crossbeam::thread;
 use image::ImageBuffer;
 use rand::random;
@@ -894,6 +894,12 @@ impl Camera {
             self.image_width,
             self.image_height,
         )));
+        let bar: ProgressBar = if Self::is_ci() {
+            ProgressBar::hidden()
+        } else {
+            ProgressBar::new((self.image_height * self.image_width) as u64)
+        };
+        let bar = Arc::new(bar);
         
         // let file = File::create(path).expect("Failed to create file");
         // let file = BufWriter::new(file);
@@ -922,6 +928,7 @@ impl Camera {
                 let camera_clone = self.clone();
                 let thread_count = Arc::clone(&thread_count);
                 let thread_number_controller = Arc::clone(&thread_number_controller);
+                let bar = Arc::clone(&bar);
                 let start_row = thread_id * rows_per_thread as usize;
                 let end_row = if thread_id == NUM_THREADS - 1 {
                     self.image_height as usize
@@ -930,6 +937,7 @@ impl Camera {
                 };
 
                 thread_count.fetch_add(1, Ordering::SeqCst);
+                bar.set_message(format!("|{} threads outstanding|", thread_count.load(Ordering::SeqCst)));
 
                 s.spawn(move |_| {
                     let mut results: Vec<(usize, usize, [u8; 3])> = Vec::new();
@@ -961,6 +969,7 @@ impl Camera {
                         write_color(color, &mut img_clone, i, j);
                     }
                     thread_count.fetch_sub(1, Ordering::SeqCst);
+                    bar.set_message(format!("|{} threads outstanding|", thread_count.load(Ordering::SeqCst)));
                     thread_number_controller.notify_one();
                 });
             }
