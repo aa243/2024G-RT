@@ -792,11 +792,6 @@ impl Camera {
         if !hit {
             return self.background;
         } else {
-            // lambertian
-            // let direct = rec.normal + Vec3::random_unit_vector();
-
-            // basic
-            // let direct = Vec3::random_on_hemisphere(&rec.normal);
 
             let mut scattered = Ray::new(Point3::zero(), Vec3::zero(), 0.0);
             let mut attenuation = Color::new(0.0, 0.0, 0.0);
@@ -816,12 +811,6 @@ impl Camera {
 
             return color_from_emission;
         }
-
-        // let direct = r.direction();
-        // let a = 0.5 * (direct.y + 1.0);
-        // let color1 = Color::new(1.0, 1.0, 1.0);
-        // let color2 = Color::new(0.5, 0.7, 1.0);
-        // return color1 * (1.0 - a) + color2 * a;
     }
 
     fn is_ci() -> bool {
@@ -900,13 +889,6 @@ impl Camera {
             ProgressBar::new((self.image_height * self.image_width) as u64)
         };
         let bar = Arc::new(bar);
-        
-        // let file = File::create(path).expect("Failed to create file");
-        // let file = BufWriter::new(file);
-        // let file = Arc::new(Mutex::new(file));
-
-        // writeln!(file.lock().unwrap(), "P3\n{} {}\n255", self.image_width, self.image_height)
-        //     .expect("Failed to write header");
 
         thread::scope(|s| {
             let rows_per_thread = self.image_height / NUM_THREADS as u32;
@@ -944,13 +926,6 @@ impl Camera {
 
                     for j in start_row..end_row {
                         for i in 0..camera_clone.image_width as usize {
-                            // let pixel_color: Color = (0..camera_clone.samples_per_pixel)
-                            //     .map(|_| {
-                            //         let r = camera_clone.get_ray(i as f64, j as f64);
-                            //         Self::ray_color(r, &world_clone, camera_clone.max_depth)
-                            //     })
-                            //     .fold(Color::new(0.0, 0.0, 0.0), |sum, c| sum + c)
-                            //     / camera_clone.samples_per_pixel as f64;
 
                             let mut pixel_color = Color::new(0.0, 0.0, 0.0);
                             for _ in 0..camera_clone.samples_per_pixel {
