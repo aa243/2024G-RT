@@ -42,6 +42,9 @@ impl Point3{
     pub fn to_vec3(&self) -> Vec3 {
         Vec3::new(self.x, self.y, self.z)
     }
+    pub fn random(min: f64, max: f64) -> Self{
+        return Point3::new(random_between(min, max), random_between(min, max), random_between(min, max));
+    }
 }
 
 impl Add<Vec3> for Point3 {
