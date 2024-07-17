@@ -1,10 +1,10 @@
 // Module: Vec3,Point3,Ray,Interval
 
-use std::ops::{Add, AddAssign};
 use std::fmt;
+use std::ops::{Add, AddAssign};
 
-use crate::random_double;
 use crate::random_between;
+use crate::random_double;
 
 #[derive(Clone, Debug, PartialEq, Copy)]
 pub struct Point3 {
@@ -13,7 +13,7 @@ pub struct Point3 {
     pub z: f64,
 }
 
-impl Point3{
+impl Point3 {
     pub fn new(x: f64, y: f64, z: f64) -> Self {
         Self { x, y, z }
     }
@@ -42,8 +42,18 @@ impl Point3{
     pub fn to_vec3(&self) -> Vec3 {
         Vec3::new(self.x, self.y, self.z)
     }
-    pub fn random(min: f64, max: f64) -> Self{
-        return Point3::new(random_between(min, max), random_between(min, max), random_between(min, max));
+    pub fn random(min: f64, max: f64) -> Self {
+        return Point3::new(
+            random_between(min, max),
+            random_between(min, max),
+            random_between(min, max),
+        );
+    }
+    pub fn squared_length(&self) -> f64 {
+        self.x * self.x + self.y * self.y + self.z * self.z
+    }
+    pub fn length(&self) -> f64 {
+        self.squared_length().sqrt()
     }
 }
 
@@ -70,7 +80,7 @@ impl std::ops::Sub<Vec3> for Point3 {
     }
 }
 
-impl std::ops::Sub for Point3{
+impl std::ops::Sub for Point3 {
     type Output = Vec3;
 
     fn sub(self, other: Self) -> Vec3 {
@@ -82,7 +92,7 @@ impl std::ops::Sub for Point3{
     }
 }
 
-impl std::ops::Mul<f64> for Point3{
+impl std::ops::Mul<f64> for Point3 {
     type Output = Self;
 
     fn mul(self, other: f64) -> Self {
@@ -92,7 +102,6 @@ impl std::ops::Mul<f64> for Point3{
             z: self.z * other,
         }
     }
-
 }
 
 #[derive(Clone, Debug, PartialEq, Copy)]
@@ -145,11 +154,11 @@ impl Vec3 {
         }
     }
 
-    pub fn dot(&self, other : &Self) -> f64 {
+    pub fn dot(&self, other: &Self) -> f64 {
         self.x * other.x + self.y * other.y + self.z * other.z
     }
 
-    pub fn cross(&self, other : &Self) -> Self {
+    pub fn cross(&self, other: &Self) -> Self {
         Self {
             x: self.y * other.z - self.z * other.y,
             y: self.z * other.x - self.x * other.z,
@@ -157,7 +166,7 @@ impl Vec3 {
         }
     }
 
-    pub fn element_mul(&self, other : &Self) -> Self {
+    pub fn element_mul(&self, other: &Self) -> Self {
         Self {
             x: self.x * other.x,
             y: self.y * other.y,
@@ -165,39 +174,42 @@ impl Vec3 {
         }
     }
 
-    pub fn random() -> Vec3{
+    pub fn random() -> Vec3 {
         return Vec3::new(random_double(), random_double(), random_double());
     }
-    pub fn random_between(min: f64, max: f64) -> Vec3{
-        return Vec3::new(random_between(min, max), random_between(min, max), random_between(min, max));
+    pub fn random_between(min: f64, max: f64) -> Vec3 {
+        return Vec3::new(
+            random_between(min, max),
+            random_between(min, max),
+            random_between(min, max),
+        );
     }
-    pub fn random_in_unit_sphere() -> Vec3{
-        loop{
+    pub fn random_in_unit_sphere() -> Vec3 {
+        loop {
             let p = Vec3::random_between(-1.0, 1.0);
             if p.squared_length() < 1.0 {
                 return p;
             }
         }
     }
-    pub fn random_unit_vector() -> Vec3{
+    pub fn random_unit_vector() -> Vec3 {
         return Vec3::random_in_unit_sphere().normalize();
     }
-    pub fn random_on_hemisphere(normal: &Vec3) -> Vec3{
+    pub fn random_on_hemisphere(normal: &Vec3) -> Vec3 {
         let on_unit_sphere = Self::random_unit_vector();
         let dot = on_unit_sphere.dot(normal);
-        if(dot > 0.0){
+        if (dot > 0.0) {
             return on_unit_sphere;
-        }
-        else {
+        } else {
             return on_unit_sphere * (-1.0);
         }
     }
-    pub fn near_zero(&self) -> bool{
+    pub fn near_zero(&self) -> bool {
         let s = 1e-8;
         return self.x.abs() < s && self.y.abs() < s && self.z.abs() < s;
     }
-    pub fn random_in_unit_disk() -> Vec3{
-        loop{
+    pub fn random_in_unit_disk() -> Vec3 {
+        loop {
             let p = Vec3::new(random_between(-1.0, 1.0), random_between(-1.0, 1.0), 0.0);
             if p.squared_length() < 1.0 {
                 return p;
@@ -206,12 +218,12 @@ impl Vec3 {
     }
 }
 
-pub fn reflect(v: Vec3, n: Vec3) -> Vec3{
+pub fn reflect(v: Vec3, n: Vec3) -> Vec3 {
     // println!("{:?}",v.dot(&n));
     return v - n * 2.0 * v.dot(&n);
 }
-pub fn refract(uv: Vec3, n: Vec3, etai_over_etat: f64) -> Vec3{
-    let cos_theta = n.dot(&(uv*(-1.0))).min(1.0);
+pub fn refract(uv: Vec3, n: Vec3, etai_over_etat: f64) -> Vec3 {
+    let cos_theta = n.dot(&(uv * (-1.0))).min(1.0);
     let r_out_perp = (uv + n * cos_theta) * etai_over_etat;
     let r_out_parallel = n * -((1.0 - r_out_perp.squared_length()).abs().sqrt());
     r_out_parallel + r_out_perp
@@ -261,7 +273,7 @@ impl AddAssign<f64> for Vec3 {
     }
 }
 
-impl std::ops::Mul<f64> for Vec3{
+impl std::ops::Mul<f64> for Vec3 {
     type Output = Self;
 
     fn mul(self, other: f64) -> Self {
@@ -350,28 +362,37 @@ impl Ray {
 }
 
 #[derive(Clone, Debug, PartialEq, Copy)]
-pub struct Interval{
+pub struct Interval {
     pub min: f64,
     pub max: f64,
 }
 
-impl Interval{
+impl Interval {
     pub fn default() -> Self {
         Self::empty()
     }
     pub fn new(min: f64, max: f64) -> Self {
         Self { min, max }
     }
-    pub fn new_by_interval(a: Interval, b: Interval) -> Self{
-        Self{min: a.min.min(b.min), max: a.max.max(b.max)}
+    pub fn new_by_interval(a: Interval, b: Interval) -> Self {
+        Self {
+            min: a.min.min(b.min),
+            max: a.max.max(b.max),
+        }
     }
     pub fn universe() -> Self {
-        Self { min: std::f64::NEG_INFINITY, max: std::f64::INFINITY }
+        Self {
+            min: std::f64::NEG_INFINITY,
+            max: std::f64::INFINITY,
+        }
     }
     pub fn empty() -> Self {
-        Self { min: std::f64::INFINITY, max: std::f64::NEG_INFINITY }
+        Self {
+            min: std::f64::INFINITY,
+            max: std::f64::NEG_INFINITY,
+        }
     }
-    pub fn size(&self) -> f64{
+    pub fn size(&self) -> f64 {
         self.max - self.min
     }
     pub fn contain(&self, t: f64) -> bool {
@@ -380,22 +401,32 @@ impl Interval{
     pub fn surround(&self, t: f64) -> bool {
         t > self.min && t < self.max
     }
-    pub fn clamp(&self, x: f64) -> f64{
-        if x < self.min {self.min}
-        else if x > self.max {self.max}
-        else {x}
+    pub fn clamp(&self, x: f64) -> f64 {
+        if x < self.min {
+            self.min
+        } else if x > self.max {
+            self.max
+        } else {
+            x
+        }
     }
-    pub fn expand(&self, delta: f64) -> Self{
+    pub fn expand(&self, delta: f64) -> Self {
         let padding = delta / 2.0;
-        Self { min: self.min - padding, max: self.max + padding }
+        Self {
+            min: self.min - padding,
+            max: self.max + padding,
+        }
     }
 }
 
-impl std::ops::Add<f64> for Interval{
+impl std::ops::Add<f64> for Interval {
     type Output = Self;
 
     fn add(self, other: f64) -> Self {
-        Self { min: self.min + other, max: self.max + other }
+        Self {
+            min: self.min + other,
+            max: self.max + other,
+        }
     }
 }
 

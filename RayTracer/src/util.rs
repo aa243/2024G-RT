@@ -802,6 +802,13 @@ impl Camera {
         };
         let hit = world.hit(r, Interval::new(0.001, INFINITY), &mut rec);
         if !hit {
+            // let direction = r.direction().normalize();
+            // let a = 0.5 * (direction.y + 1.0);
+            // let color1 = Color::new(0.1, 0.1, 0.45);
+            // let color2 = Color::new(0.2, 0.2, 0.9);
+            // return color1 * (1.0 - a) + color2 * a;
+
+            // Color::new(0.0, 0.0, 0.0)
             return self.background;
         } else {
             let mut scattered = Ray::new(Point3::zero(), Vec3::zero(), 0.0);
