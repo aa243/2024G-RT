@@ -1,10 +1,10 @@
 use std::ops::Mul;
 mod sup;
-use sup::Interval;
 use crate::File;
-use std::io::Write;
 use crate::Vec3;
+use std::io::Write;
 use std::sync::{Arc, Mutex};
+use sup::Interval;
 extern crate image;
 use image::{DynamicImage, GenericImageView};
 use std::path::Path;
@@ -17,13 +17,13 @@ pub fn write_color(pixel_color: [u8; 3], img: &Arc<Mutex<RgbImage>>, i: usize, j
     *pixel = image::Rgb(pixel_color);
 }
 
-#[derive (Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Color {
     pub r: f64,
     pub g: f64,
     pub b: f64,
 }
-impl Color{
+impl Color {
     pub fn new(r: f64, g: f64, b: f64) -> Self {
         Self { r, g, b }
     }
@@ -31,7 +31,11 @@ impl Color{
         x.sqrt()
     }
     pub fn to_rgb(&self) -> [u8; 3] {
-        [(Self::linear_to_gamma(self.r) * 255.0) as u8, (Self::linear_to_gamma(self.g) * 255.0) as u8, (Self::linear_to_gamma(self.b) * 255.0) as u8]
+        [
+            (Self::linear_to_gamma(self.r) * 255.0) as u8,
+            (Self::linear_to_gamma(self.g) * 255.0) as u8,
+            (Self::linear_to_gamma(self.b) * 255.0) as u8,
+        ]
     }
     pub fn to_Vec3(&self) -> Vec3 {
         Vec3::new(self.r as f64, self.g as f64, self.b as f64)
@@ -71,7 +75,7 @@ impl Mul<f64> for Color {
     }
 }
 
-impl std::ops::Add for Color{
+impl std::ops::Add for Color {
     type Output = Self;
 
     fn add(self, other: Self) -> Self {
@@ -83,7 +87,7 @@ impl std::ops::Add for Color{
     }
 }
 
-impl std::ops::Add<Vec3> for Color{
+impl std::ops::Add<Vec3> for Color {
     type Output = Self;
 
     fn add(self, other: Vec3) -> Self {
@@ -95,7 +99,7 @@ impl std::ops::Add<Vec3> for Color{
     }
 }
 
-impl std::ops::Div<f64> for Color{
+impl std::ops::Div<f64> for Color {
     type Output = Self;
 
     fn div(self, other: f64) -> Self {
@@ -109,7 +113,6 @@ impl std::ops::Div<f64> for Color{
 
 pub struct Image {
     img: DynamicImage,
-
 }
 
 impl Image {
@@ -135,6 +138,12 @@ impl Image {
             let pixel = self.img.get_pixel(i, j).0; // 获取像素值
             Some((pixel[0], pixel[1], pixel[2])) // 返回RGB值
         } else {
+            println!(
+                "width: {:?}, height: {:?}",
+                self.img.width(),
+                self.img.height()
+            );
+            std::process::exit(0);
             None // 超出图片范围，返回None
         }
     }

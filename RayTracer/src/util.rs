@@ -7,18 +7,18 @@ pub use texture::*;
 #[path = "./perlin.rs"]
 mod perlin;
 pub use perlin::Perlin;
-#[path = "./quad.rs"]
-mod quad;
-pub use quad::*;
+#[path = "./plane.rs"]
+mod plane;
+pub use plane::*;
 #[path = "./material.rs"]
 mod material;
 #[path = "./sup.rs"]
 mod sup;
 use crate::File;
-pub use material::*;
-use indicatif::ProgressBar;
 use crossbeam::thread;
 use image::ImageBuffer;
+use indicatif::ProgressBar;
+pub use material::*;
 use rand::random;
 use std::f64::consts::PI;
 use std::sync::atomic::Ordering;
@@ -515,10 +515,16 @@ impl Hittable for ConstantMedium {
     fn hit(&self, r: Ray, ray_t: Interval, rec: &mut HitRecord) -> bool {
         let mut rec1 = HitRecord::default();
         let mut rec2 = HitRecord::default();
-        if !self.boundary.hit(r, Interval::new(-INFINITY, INFINITY), &mut rec1) {
+        if !self
+            .boundary
+            .hit(r, Interval::new(-INFINITY, INFINITY), &mut rec1)
+        {
             return false;
         }
-        if !self.boundary.hit(r, Interval::new(rec1.t + 0.0001, INFINITY), &mut rec2) {
+        if !self
+            .boundary
+            .hit(r, Interval::new(rec1.t + 0.0001, INFINITY), &mut rec2)
+        {
             return false;
         }
         if rec1.t < ray_t.min {
@@ -701,6 +707,8 @@ pub struct Camera {
     w: Vec3,
     defocus_disk_u: Vec3,
     defocus_disk_v: Vec3,
+    sqrt_spp: i32,
+    recip_sqrt_spp: f64,
 }
 
 impl Camera {
@@ -739,6 +747,8 @@ impl Camera {
             w: Vec3::zero(),
             defocus_disk_u: Vec3::zero(),
             defocus_disk_v: Vec3::zero(),
+            sqrt_spp: 0,
+            recip_sqrt_spp: 0.0,
         }
     }
 
@@ -749,6 +759,8 @@ impl Camera {
         } else {
             1
         };
+        self.sqrt_spp = (self.samples_per_pixel as f64).sqrt() as i32;
+        self.recip_sqrt_spp = 1.0 / self.sqrt_spp as f64;
         self.center = self.lookfrom;
 
         self.w = (self.lookfrom - self.lookat).normalize();
@@ -792,7 +804,6 @@ impl Camera {
         if !hit {
             return self.background;
         } else {
-
             let mut scattered = Ray::new(Point3::zero(), Vec3::zero(), 0.0);
             let mut attenuation = Color::new(0.0, 0.0, 0.0);
             let rec_clone = rec.clone();
@@ -821,8 +832,8 @@ impl Camera {
         Vec3::new(random_double() - 0.5, random_double() - 0.5, 0.0)
     }
 
-    fn get_ray(&self, i: f64, j: f64) -> Ray {
-        let offset = Self::sample_square();
+    fn get_ray(&self, i: f64, j: f64, s_i: i32, s_j: i32) -> Ray {
+        let offset = self.sample_square_stratified(s_i, s_j);
         // let offset = Vec3::new(0.0,0.0,0.0);
         let pixel_center = self.pixel00_loc
             + (self.pixel_horizontal * (i + offset.x))
@@ -837,6 +848,12 @@ impl Camera {
         Ray::new(ray_origin, ray_direct, ray_time)
     }
 
+    fn sample_square_stratified(&self, s_i: i32, s_j: i32) -> Vec3 {
+        let px = ((s_i as f64 + random_double()) * self.recip_sqrt_spp) as f64 - 0.5;
+        let py = ((s_j as f64 + random_double()) * self.recip_sqrt_spp) as f64 - 0.5;
+        Vec3::new(px, py, 0.0)
+    }
+
     fn defocus_disk_sample(&self) -> Point3 {
         let p = Vec3::random_in_unit_disk();
         self.center + self.defocus_disk_u * p.x + self.defocus_disk_v * p.y
@@ -844,9 +861,9 @@ impl Camera {
 
     // pub fn render(&mut self, world: &Arc<dyn Hittable>, path: &str) {
     //     self.initialize();
-        // let bar: ProgressBar = if Self::is_ci() {
-        //     let output_image: image::DynamicImage = image::DynamicImage::ImageRgb8(*img.clone());e_height * self.image_width) as u64)
-        // };
+    // let bar: ProgressBar = if Self::is_ci() {
+    //     let output_image: image::DynamicImage = image::DynamicImage::ImageRgb8(*img.clone());e_height * self.image_width) as u64)
+    // };
 
     //     let mut file = File::create(path).expect("Failed to create file");
     //     writeln!(file, "P3\n{} {}\n255", self.image_width, self.image_height)
@@ -919,19 +936,23 @@ impl Camera {
                 };
 
                 thread_count.fetch_add(1, Ordering::SeqCst);
-                bar.set_message(format!("|{} threads outstanding|", thread_count.load(Ordering::SeqCst)));
+                bar.set_message(format!(
+                    "|{} threads outstanding|",
+                    thread_count.load(Ordering::SeqCst)
+                ));
 
                 s.spawn(move |_| {
                     let mut results: Vec<(usize, usize, [u8; 3])> = Vec::new();
 
                     for j in start_row..end_row {
                         for i in 0..camera_clone.image_width as usize {
-
                             let mut pixel_color = Color::new(0.0, 0.0, 0.0);
-                            for _ in 0..camera_clone.samples_per_pixel {
-                                let r = camera_clone.get_ray(i as f64, j as f64);
-                                pixel_color = pixel_color
-                                    + camera_clone.ray_color(r, &world, camera_clone.max_depth);
+                            for s_i in 0..camera_clone.sqrt_spp {
+                                for s_j in 0..camera_clone.sqrt_spp {
+                                    let r = camera_clone.get_ray(i as f64, j as f64, s_i, s_j);
+                                    pixel_color = pixel_color
+                                        + camera_clone.ray_color(r, &world, camera_clone.max_depth);
+                                }
                             }
                             pixel_color = pixel_color / camera_clone.samples_per_pixel as f64;
                             // write_color(pixel_color.to_rgb(), &mut file);
@@ -945,7 +966,10 @@ impl Camera {
                         write_color(color, &mut img_clone, i, j);
                     }
                     thread_count.fetch_sub(1, Ordering::SeqCst);
-                    bar.set_message(format!("|{} threads outstanding|", thread_count.load(Ordering::SeqCst)));
+                    bar.set_message(format!(
+                        "|{} threads outstanding|",
+                        thread_count.load(Ordering::SeqCst)
+                    ));
                     thread_number_controller.notify_one();
                 });
             }

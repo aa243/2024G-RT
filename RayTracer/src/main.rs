@@ -1,9 +1,11 @@
 use std::{f64::consts::PI, f64::INFINITY, fs::File};
 mod util;
+use rayon::iter::Positions;
 use std::sync::Arc;
 use util::*;
-#[macro_use]
 extern crate lazy_static;
+extern crate obj;
+use obj::Obj;
 
 const AUTHOR: &str = "CHENG";
 
@@ -366,6 +368,252 @@ fn quads() {
     println!("Output image as \"{}\"\n Author: {}", path, AUTHOR);
 }
 
+// fn triangles() {
+//     let path = "output/book2/triangles.png";
+
+//     let LEFT_RED = Arc::new(Lambertian::new_by_color(Color::new(1.0, 0.2, 0.2)));
+//     let BACK_GREEN = Arc::new(Lambertian::new_by_color(Color::new(0.2, 1.0, 0.2)));
+//     let RIGHT_BLUE = Arc::new(Lambertian::new_by_color(Color::new(0.2, 0.2, 1.0)));
+//     let UPPER_ORANGE = Arc::new(Lambertian::new_by_color(Color::new(1.0, 0.5, 0.0)));
+//     let LOWER_TEAL = Arc::new(Lambertian::new_by_color(Color::new(0.2, 0.8, 0.8)));
+
+//     let globe1 = Arc::new(Triangle::new(
+//         Point3::new(-3.0, -2.0, 5.0),
+//         Vec3::new(0.0, 0.0, -4.0),
+//         Vec3::new(0.0, 4.0, 0.0),
+//         Some(LEFT_RED),
+//     ));
+//     let globe2 = Arc::new(Triangle::new(
+//         Point3::new(-2.0, -2.0, 0.0),
+//         Vec3::new(4.0, 0.0, 0.0),
+//         Vec3::new(0.0, 4.0, 0.0),
+//         Some(BACK_GREEN),
+//     ));
+//     let globe3 = Arc::new(Triangle::new(
+//         Point3::new(3.0, -2.0, 1.0),
+//         Vec3::new(0.0, 0.0, 4.0),
+//         Vec3::new(0.0, 4.0, 0.0),
+//         Some(RIGHT_BLUE),
+//     ));
+//     let globe4 = Arc::new(Triangle::new(
+//         Point3::new(-2.0, 3.0, 1.0),
+//         Vec3::new(4.0, 0.0, 0.0),
+//         Vec3::new(0.0, 0.0, 4.0),
+//         Some(UPPER_ORANGE),
+//     ));
+//     let globe5 = Arc::new(Triangle::new(
+//         Point3::new(-2.0, -3.0, 5.0),
+//         Vec3::new(4.0, 0.0, 0.0),
+//         Vec3::new(0.0, 0.0, -4.0),
+//         Some(LOWER_TEAL),
+//     ));
+
+//     let mut world = HittableList::new();
+//     world.add(globe1);
+//     world.add(globe2);
+//     world.add(globe3);
+//     world.add(globe4);
+//     world.add(globe5);
+
+//     let mut bvh_world: HittableList = HittableList::new();
+//     bvh_world.add(Arc::new(BvhNode::new_by_object_list(&world)));
+//     let boxed_world = Arc::new(bvh_world) as Arc<dyn Hittable>;
+
+//     let aspect_ratio = 1.0;
+//     let image_width = 400;
+//     let samples_per_pixel = 100;
+//     let max_depth = 50;
+//     let vfov = 80.0;
+//     let lookfrom = Point3::new(0.0, 0.0, 9.0);
+//     let lookat = Point3::new(0.0, 0.0, 0.0);
+//     let vup = Vec3::new(0.0, 1.0, 0.0);
+//     let defocus_angle = 0.0;
+//     let focus_dist = 10.0;
+//     let background = Color::new(0.7, 0.8, 1.0);
+//     let mut cam = Camera::new(
+//         aspect_ratio,
+//         image_width,
+//         samples_per_pixel,
+//         max_depth,
+//         vfov,
+//         lookfrom,
+//         lookat,
+//         vup,
+//         defocus_angle,
+//         focus_dist,
+//         background,
+//     );
+
+//     cam.render(&boxed_world, path);
+
+//     // Save the image
+//     println!("Output image as \"{}\"\n Author: {}", path, AUTHOR);
+// }
+
+fn disk() {
+    let path = "output/book2/disk.png";
+
+    let LEFT_RED = Arc::new(Lambertian::new_by_color(Color::new(1.0, 0.2, 0.2)));
+    let BACK_GREEN = Arc::new(Lambertian::new_by_color(Color::new(0.2, 1.0, 0.2)));
+    let RIGHT_BLUE = Arc::new(Lambertian::new_by_color(Color::new(0.2, 0.2, 1.0)));
+    let UPPER_ORANGE = Arc::new(Lambertian::new_by_color(Color::new(1.0, 0.5, 0.0)));
+    let LOWER_TEAL = Arc::new(Lambertian::new_by_color(Color::new(0.2, 0.8, 0.8)));
+
+    // let globe1 = Arc::new(Disk::new(
+    //     Point3::new(-3.0, -2.0, 5.0),
+    //     Vec3::new(0.0, 0.0, -4.0),
+    //     Vec3::new(0.0, 4.0, 0.0),
+    //     Some(LEFT_RED),
+    // ));
+    let globe2 = Arc::new(Disk::new(
+        Point3::new(-2.0, -2.0, 0.0),
+        Vec3::new(4.0, 0.0, 0.0),
+        Vec3::new(0.0, 4.0, 0.0),
+        Some(BACK_GREEN),
+    ));
+    // let globe3 = Arc::new(Disk::new(
+    //     Point3::new(3.0, -2.0, 1.0),
+    //     Vec3::new(0.0, 0.0, 4.0),
+    //     Vec3::new(0.0, 4.0, 0.0),
+    //     Some(RIGHT_BLUE),
+    // ));
+    // let globe4 = Arc::new(Disk::new(
+    //     Point3::new(-2.0, 3.0, 1.0),
+    //     Vec3::new(4.0, 0.0, 0.0),
+    //     Vec3::new(0.0, 0.0, 4.0),
+    //     Some(UPPER_ORANGE),
+    // ));
+    // let globe5 = Arc::new(Disk::new(
+    //     Point3::new(-2.0, -3.0, 5.0),
+    //     Vec3::new(4.0, 0.0, 0.0),
+    //     Vec3::new(0.0, 0.0, -4.0),
+    //     Some(LOWER_TEAL),
+    // ));
+
+    let mut world = HittableList::new();
+    // world.add(globe1);
+    world.add(globe2);
+    // world.add(globe3);
+    // world.add(globe4);
+    // world.add(globe5);
+
+    let mut bvh_world: HittableList = HittableList::new();
+    bvh_world.add(Arc::new(BvhNode::new_by_object_list(&world)));
+    let boxed_world = Arc::new(bvh_world) as Arc<dyn Hittable>;
+
+    let aspect_ratio = 1.0;
+    let image_width = 400;
+    let samples_per_pixel = 100;
+    let max_depth = 50;
+    let vfov = 80.0;
+    let lookfrom = Point3::new(0.0, 0.0, 9.0);
+    let lookat = Point3::new(0.0, 0.0, 0.0);
+    let vup = Vec3::new(0.0, 1.0, 0.0);
+    let defocus_angle = 0.0;
+    let focus_dist = 10.0;
+    let background = Color::new(0.7, 0.8, 1.0);
+    let mut cam = Camera::new(
+        aspect_ratio,
+        image_width,
+        samples_per_pixel,
+        max_depth,
+        vfov,
+        lookfrom,
+        lookat,
+        vup,
+        defocus_angle,
+        focus_dist,
+        background,
+    );
+
+    cam.render(&boxed_world, path);
+
+    // Save the image
+    println!("Output image as \"{}\"\n Author: {}", path, AUTHOR);
+}
+
+// fn dick() {
+//     let path = "output/book2/dick.png";
+
+//     let LEFT_RED = Arc::new(Lambertian::new_by_color(Color::new(1.0, 0.2, 0.2)));
+//     let BACK_GREEN = Arc::new(Lambertian::new_by_color(Color::new(0.2, 1.0, 0.2)));
+//     let RIGHT_BLUE = Arc::new(Lambertian::new_by_color(Color::new(0.2, 0.2, 1.0)));
+//     let UPPER_ORANGE = Arc::new(Lambertian::new_by_color(Color::new(1.0, 0.5, 0.0)));
+//     let LOWER_TEAL = Arc::new(Lambertian::new_by_color(Color::new(0.2, 0.8, 0.8)));
+
+//     // let globe1 = Arc::new(Disk::new(
+//     //     Point3::new(-3.0, -2.0, 5.0),
+//     //     Vec3::new(0.0, 0.0, -4.0),
+//     //     Vec3::new(0.0, 4.0, 0.0),
+//     //     Some(LEFT_RED),
+//     // ));
+//     let globe2 = Arc::new(Disk::new(
+//         Point3::new(-1.0, -2.0, 0.0),
+//         Vec3::new(1.0, 0.0, 0.0),
+//         Vec3::new(0.0, 1.0, 0.0),
+//         Some(BACK_GREEN),
+//     ));
+//     let globe3 = Arc::new(Disk::new(
+//         Point3::new(1.0, -2.0, 0.0),
+//         Vec3::new(1.0, 0.0, 0.0),
+//         Vec3::new(0.0, 1.0, 0.0),
+//         Some(RIGHT_BLUE),
+//     ));
+//     let globe4 = Arc::new(Quad::new(
+//         Point3::new(-1.0, -2.0, -1.0),
+//         Vec3::new(2.0, 0.0, 0.0),
+//         Vec3::new(0.0, 8.0, 0.0),
+//         Some(UPPER_ORANGE),
+//     ));
+//     let globe5 = Arc::new(Disk::new(
+//         Point3::new(0.0, 6.0, 0.0),
+//         Vec3::new(1.0, 0.0, 0.0),
+//         Vec3::new(0.0, 1.0, 0.0),
+//         Some(LOWER_TEAL),
+//     ));
+
+//     let mut world = HittableList::new();
+//     // world.add(globe1);
+//     world.add(globe2);
+//     world.add(globe3);
+//     world.add(globe4);
+//     world.add(globe5);
+
+//     let mut bvh_world: HittableList = HittableList::new();
+//     bvh_world.add(Arc::new(BvhNode::new_by_object_list(&world)));
+//     let boxed_world = Arc::new(bvh_world) as Arc<dyn Hittable>;
+
+//     let aspect_ratio = 1.0;
+//     let image_width = 400;
+//     let samples_per_pixel = 100;
+//     let max_depth = 50;
+//     let vfov = 80.0;
+//     let lookfrom = Point3::new(0.0, 0.0, 9.0);
+//     let lookat = Point3::new(0.0, 0.0, 0.0);
+//     let vup = Vec3::new(0.0, 1.0, 0.0);
+//     let defocus_angle = 0.0;
+//     let focus_dist = 10.0;
+//     let background = Color::new(0.7, 0.8, 1.0);
+//     let mut cam = Camera::new(
+//         aspect_ratio,
+//         image_width,
+//         samples_per_pixel,
+//         max_depth,
+//         vfov,
+//         lookfrom,
+//         lookat,
+//         vup,
+//         defocus_angle,
+//         focus_dist,
+//         background,
+//     );
+
+//     cam.render(&boxed_world, path);
+
+//     // Save the image
+//     println!("Output image as \"{}\"\n Author: {}", path, AUTHOR);
+// }
+
 fn simple_light() {
     let path = "output/book2/lights_with_sphere.png";
 
@@ -438,7 +686,7 @@ fn simple_light() {
 }
 
 fn cornell_box() {
-    let path = "output/book2/cornell_box.png";
+    let path = "output/book2/cornell_box_stratified.png";
 
     let LIGHT = Arc::new(DiffuseLight::new_by_color(Color::new(15.0, 15.0, 15.0)));
     let RED = Arc::new(Lambertian::new_by_color(Color::new(0.65, 0.05, 0.05)));
@@ -798,8 +1046,288 @@ fn final_scene(image_width: u32, samples_per_pixel: u32, max_depth: u32) {
     println!("Output image as \"{}\"\n Author: {}", path, AUTHOR);
 }
 
+fn test() {
+    let ganyu = Obj::load("support/spotCow/spot_triangulated.obj");
+    let ganyu = ganyu.unwrap();
+    let Groups: &Vec<obj::Group> = &ganyu.data.objects[0].groups;
+    let Positions = &ganyu.data.position;
+    println!("{:?}", ganyu.data.objects[0].groups[0].material);
+}
+
+fn snowy_cows() {
+    let path = "output/cow/snowy_cows.png";
+
+    let BLUE = Arc::new(Lambertian::new_by_color(Color::new(0.2, 0.2, 1.0)));
+    let WHITE = Arc::new(Lambertian::new_by_color(Color::new(0.73, 0.73, 0.73)));
+    let SNOW_WHITE = Arc::new(Lambertian::new_by_color(Color::new(1.0, 1.0, 1.0)));
+    let materials: [Arc<dyn Material>; 1] = [Arc::new(Lambertian::new(Arc::new(
+        Image_Texture::new("support/spotCow/spot_texture.png"),
+    )))];
+
+    let mut world = HittableList::new();
+    let mut cow1 = HittableList::new();
+    let mut cow2 = HittableList::new();
+    let mut cow3 = HittableList::new();
+
+    let ganyu = Obj::load("support/spotCow/spot_triangulated.obj");
+    let ganyu = ganyu.unwrap();
+    let groups: &Vec<obj::Group> = &ganyu.data.objects[0].groups;
+    let positions = &ganyu.data.position;
+    let tex_coords = &ganyu.data.texture;
+
+    for i in 0..groups.len() {
+        let group = &groups[i];
+        for poly in &group.polys {
+            let P = Point3::new(
+                positions[poly.0[0].0][0] as f64,
+                positions[poly.0[0].0][1] as f64,
+                positions[poly.0[0].0][2] as f64,
+            );
+            let P_tex = [
+                tex_coords[poly.0[0].1.unwrap()][0] as f64,
+                tex_coords[poly.0[0].1.unwrap()][1] as f64,
+            ];
+            let Q = Point3::new(
+                positions[poly.0[1].0][0] as f64,
+                positions[poly.0[1].0][1] as f64,
+                positions[poly.0[1].0][2] as f64,
+            );
+            let Q_tex = [
+                tex_coords[poly.0[1].1.unwrap()][0] as f64,
+                tex_coords[poly.0[1].1.unwrap()][1] as f64,
+            ];
+            let R = Point3::new(
+                positions[poly.0[2].0][0] as f64,
+                positions[poly.0[2].0][1] as f64,
+                positions[poly.0[2].0][2] as f64,
+            );
+            let R_tex = [
+                tex_coords[poly.0[2].1.unwrap()][0] as f64,
+                tex_coords[poly.0[2].1.unwrap()][1] as f64,
+            ];
+            cow1.add(Arc::new(Triangle::new(
+                P,
+                Q - P,
+                R - P,
+                [P_tex, Q_tex, R_tex],
+                Some(materials[0].clone()),
+            )));
+            cow2.add(Arc::new(Triangle::new(
+                P,
+                Q - P,
+                R - P,
+                [P_tex, Q_tex, R_tex],
+                Some(materials[0].clone()),
+            )));
+            cow3.add(Arc::new(Triangle::new(
+                P,
+                Q - P,
+                R - P,
+                [P_tex, Q_tex, R_tex],
+                Some(materials[0].clone()),
+            )));
+        }
+    }
+    let cow2 = Arc::new(Translate::new(
+        Arc::new(BvhNode::new_by_object_list(&cow2)),
+        Vec3::new(1.0, 0.0, 1.0),
+    ));
+    let cow3 = Arc::new(Translate::new(
+        Arc::new(BvhNode::new_by_object_list(&cow3)),
+        Vec3::new(-1.0, 0.0, 1.0),
+    ));
+    let cow1 = Arc::new(BvhNode::new_by_object_list(&cow1));
+
+    world.add(Arc::new(Sphere::new_static(
+        Point3::new(0.0, -1000.0, 0.0),
+        1000.0,
+        Some(WHITE.clone()),
+    )));
+    world.add(cow1);
+    world.add(cow2);
+    world.add(cow3);
+
+    let mut snow = HittableList::new();
+    for _ in 0..100000 {
+        snow.add(Arc::new(Sphere::new_static(
+            Point3::random(-100.0, 100.0),
+            0.1,
+            Some(SNOW_WHITE.clone()),
+        )));
+    }
+    world.add(Arc::new(BvhNode::new_by_object_list(&snow)));
+
+    let boxed_world = Arc::new(world) as Arc<dyn Hittable>;
+
+    let aspect_ratio = 1.0;
+    let image_width = 400;
+    let samples_per_pixel = 100;
+    let max_depth = 50;
+    let vfov = 80.0;
+    let lookfrom = Point3::new(3.0, 2.0, -2.0);
+    let lookat = Point3::new(0.0, 0.0, 0.0);
+    let vup = Vec3::new(0.0, 1.0, 0.0);
+    let defocus_angle = 0.0;
+    let focus_dist = 10.0;
+    let background = Color::new(0.7, 0.8, 1.0);
+    let mut cam = Camera::new(
+        aspect_ratio,
+        image_width,
+        samples_per_pixel,
+        max_depth,
+        vfov,
+        lookfrom,
+        lookat,
+        vup,
+        defocus_angle,
+        focus_dist,
+        background,
+    );
+
+    cam.render(&boxed_world, path);
+
+    // Save the image
+    println!("Output image as \"{}\"\n Author: {}", path, AUTHOR);
+}
+
+fn marine_cows() {
+    let path = "output/cow/marine_cows.png";
+
+    let BLUE = Arc::new(Lambertian::new_by_color(Color::new(0.2, 0.2, 1.0)));
+    let WHITE = Arc::new(Lambertian::new_by_color(Color::new(0.73, 0.73, 0.73)));
+    let SNOW_WHITE = Arc::new(Lambertian::new_by_color(Color::new(1.0, 1.0, 1.0)));
+    let materials: [Arc<dyn Material>; 1] = [Arc::new(Lambertian::new(Arc::new(
+        Image_Texture::new("support/spotCow/spot_texture.png"),
+    )))];
+
+    let mut world = HittableList::new();
+    let mut cow1 = HittableList::new();
+    let mut cow2 = HittableList::new();
+    let mut cow3 = HittableList::new();
+
+    let ganyu = Obj::load("support/spotCow/spot_triangulated.obj");
+    let ganyu = ganyu.unwrap();
+    let groups: &Vec<obj::Group> = &ganyu.data.objects[0].groups;
+    let positions = &ganyu.data.position;
+    let tex_coords = &ganyu.data.texture;
+
+    for i in 0..groups.len() {
+        let group = &groups[i];
+        for poly in &group.polys {
+            let P = Point3::new(
+                positions[poly.0[0].0][0] as f64,
+                positions[poly.0[0].0][1] as f64,
+                positions[poly.0[0].0][2] as f64,
+            );
+            let P_tex = [
+                tex_coords[poly.0[0].1.unwrap()][0] as f64,
+                tex_coords[poly.0[0].1.unwrap()][1] as f64,
+            ];
+            let Q = Point3::new(
+                positions[poly.0[1].0][0] as f64,
+                positions[poly.0[1].0][1] as f64,
+                positions[poly.0[1].0][2] as f64,
+            );
+            let Q_tex = [
+                tex_coords[poly.0[1].1.unwrap()][0] as f64,
+                tex_coords[poly.0[1].1.unwrap()][1] as f64,
+            ];
+            let R = Point3::new(
+                positions[poly.0[2].0][0] as f64,
+                positions[poly.0[2].0][1] as f64,
+                positions[poly.0[2].0][2] as f64,
+            );
+            let R_tex = [
+                tex_coords[poly.0[2].1.unwrap()][0] as f64,
+                tex_coords[poly.0[2].1.unwrap()][1] as f64,
+            ];
+            cow1.add(Arc::new(Triangle::new(
+                P,
+                Q - P,
+                R - P,
+                [P_tex, Q_tex, R_tex],
+                Some(materials[0].clone()),
+            )));
+            cow2.add(Arc::new(Triangle::new(
+                P,
+                Q - P,
+                R - P,
+                [P_tex, Q_tex, R_tex],
+                Some(materials[0].clone()),
+            )));
+            cow3.add(Arc::new(Triangle::new(
+                P,
+                Q - P,
+                R - P,
+                [P_tex, Q_tex, R_tex],
+                Some(materials[0].clone()),
+            )));
+        }
+    }
+    let cow2 = Arc::new(Translate::new(
+        Arc::new(BvhNode::new_by_object_list(&cow2)),
+        Vec3::new(1.0, 0.0, 1.0),
+    ));
+    let cow3 = Arc::new(Translate::new(
+        Arc::new(BvhNode::new_by_object_list(&cow3)),
+        Vec3::new(-1.0, 0.0, 1.0),
+    ));
+    let cow1 = Arc::new(BvhNode::new_by_object_list(&cow1));
+
+    world.add(Arc::new(Sphere::new_static(
+        Point3::new(0.0, -1000.0, 0.0),
+        1000.0,
+        Some(WHITE.clone()),
+    )));
+    world.add(cow1);
+    world.add(cow2);
+    world.add(cow3);
+
+    let mut snow = HittableList::new();
+    for _ in 0..100000 {
+        snow.add(Arc::new(Sphere::new_static(
+            Point3::random(-100.0, 100.0),
+            0.1,
+            Some(SNOW_WHITE.clone()),
+        )));
+    }
+    world.add(Arc::new(BvhNode::new_by_object_list(&snow)));
+
+    let boxed_world = Arc::new(world) as Arc<dyn Hittable>;
+
+    let aspect_ratio = 1.0;
+    let image_width = 400;
+    let samples_per_pixel = 100;
+    let max_depth = 50;
+    let vfov = 80.0;
+    let lookfrom = Point3::new(3.0, 2.0, -2.0);
+    let lookat = Point3::new(0.0, 0.0, 0.0);
+    let vup = Vec3::new(0.0, 1.0, 0.0);
+    let defocus_angle = 0.0;
+    let focus_dist = 10.0;
+    let background = Color::new(0.7, 0.8, 1.0);
+    let mut cam = Camera::new(
+        aspect_ratio,
+        image_width,
+        samples_per_pixel,
+        max_depth,
+        vfov,
+        lookfrom,
+        lookat,
+        vup,
+        defocus_angle,
+        focus_dist,
+        background,
+    );
+
+    cam.render(&boxed_world, path);
+
+    // Save the image
+    println!("Output image as \"{}\"\n Author: {}", path, AUTHOR);
+}
+
 fn main() {
-    match 9 {
+    match 14 {
         1 => bouncing_spheres(),
         2 => checkered_spheres(),
         3 => earth(),
@@ -809,6 +1337,13 @@ fn main() {
         7 => cornell_box(),
         8 => cornell_smoke(),
         9 => final_scene(800, 10000, 40),
+        // 10 => triangles(),
+        // triangle function hasn't been updated
+        11 => disk(),
+        // 12 => dick(),    don't run that XD
+        13 => test(),
+        14 => snowy_cows(),
+        15 => marine_cows(),
         _ => final_scene(400, 250, 4),
     }
 
